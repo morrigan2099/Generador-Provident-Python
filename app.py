@@ -62,7 +62,7 @@ def generar_pdf(pptx_bytes):
 
 # --- UI ---
 st.set_page_config(page_title="Provident Pro v21", layout="wide")
-st.title("🚀 Generador Pro: Fuente 14pt Real (Sin AutoFit)")
+st.title("🚀 Generador Pro: Fuente 11pt Real (Sin AutoFit)")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -179,7 +179,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 14pt
+                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 11pt
                                         text_frame = shape.text_frame
                                         text_frame.auto_size = None # Elimina ajuste automático
                                         text_frame.clear()
@@ -190,7 +190,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         run.text = val
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(14) # FORZADO A 14PT
+                                        run.font.size = Pt(11) # FORZADO A 11PT
 
                     if modo == "Reportes":
                         tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
