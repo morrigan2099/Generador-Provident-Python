@@ -61,7 +61,7 @@ def descargar_imagen(url):
 
 # --- APP ---
 st.set_page_config(page_title="Provident Pro Final", layout="wide")
-st.title("🚀 Generador Pro: Estructura y Formatos Restaurados")
+st.title("🚀 Generador Pro: Reemplazo <<Confechor>>")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -101,7 +101,6 @@ if st.session_state.raw_records:
                     for idx in sel_idx:
                         fields = st.session_state.raw_records[idx]['fields']
                         
-                        # 1. VALORES PARA NOMENCLATURA Y REEMPLAZO
                         f_fecha = fields.get('Fecha', '2025-01-01')
                         dt_obj = datetime.strptime(f_fecha, '%Y-%m-%d')
                         f_suc = str(fields.get('Sucursal', '')).strip()
@@ -110,22 +109,21 @@ if st.session_state.raw_records:
                         f_ruta = str(fields.get('Ruta a seguir', '')).strip()
                         f_tipo = str(fields.get('Tipo', '')).upper()
 
-                        # Nomenclatura específica
                         partes_nom = [p for p in [f_punto, f_ruta] if p]
                         if f_muni: partes_nom.append(f_muni)
                         str_nom = ", ".join(partes_nom)
-                        nombre_archivo = f"{f_fecha} - {f_tipo} {f_suc.upper()} - {str_nom}"
+                        nombre_archivo_base = f"{f_fecha} - {f_tipo} {f_suc.upper()} - {str_nom}"
                         
-                        # 2. DICCIONARIO DE REEMPLAZOS
+                        # DICCIONARIO DE REEMPLAZOS (Actualizado a <<Confechor>>)
                         reemplazos = {
                             "<<Tipo>>": f_tipo,
-                            "<<confechor>>": formatear_confechor(f_fecha, fields.get('Hora', '')),
+                            "<<Confechor>>": formatear_confechor(f_fecha, fields.get('Hora', '')),
                             "<<Consuc>>": proper_elegante(f"Sucursal {f_suc}, {f_muni}"),
                             "<<Concat>>": proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}"),
-                            "<<Sucursal>>": proper_elegante(f_suc)
+                            "<<Sucursal>>": proper_elegante(f_suc),
+                            "<<Confecha>>": proper_elegante(f_fecha)
                         }
 
-                        # 3. PROCESAR POWERPOINT
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[fields.get('Tipo')]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
@@ -139,7 +137,8 @@ if st.session_state.raw_records:
                                                 if paragraph.runs:
                                                     run = paragraph.runs[0]
                                                     run.text = new_val
-                                                    run.font.size = Pt(32) if "\n" in val else Pt(42)
+                                                    # Aplicar 32pt si es la fecha combinada, 42pt para lo demás
+                                                    run.font.size = Pt(32) if tag == "<<Confechor>>" else Pt(42)
 
                                 if modo == "Reportes":
                                     tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
@@ -151,15 +150,14 @@ if st.session_state.raw_records:
                                                 if img_data:
                                                     slide.shapes.add_picture(img_data, shape.left, shape.top, shape.width, shape.height)
 
-                        # 4. EXPORTACIÓN Y ESTRUCTURA DE CARPETAS
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             ext = ".jpg" if modo == "Postales" else ".pdf"
-                            nom_final = proper_elegante(nombre_archivo) + ext
+                            nom_final = proper_elegante(nombre_archivo_base) + ext
                             folder_mes = f"{dt_obj.month:02d} - {MESES_ES[dt_obj.month-1]}"
                             
-                            # RUTA: Provident / Año / Mes / Modo / Sucursal / Archivo
+                            # ESTRUCTURA DE DIRECTORIOS
                             ruta_en_zip = f"Provident/{dt_obj.year}/{folder_mes}/{modo}/{proper_elegante(f_suc)}/{nom_final}"
                             
                             if modo == "Reportes":
@@ -171,5 +169,5 @@ if st.session_state.raw_records:
                                     imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
                                     zip_f.writestr(ruta_en_zip, img_io.getvalue())
 
-                st.success("✅ Estructura de directorios y formatos generados correctamente.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Completo.zip")
+                st.success("✅ Archivos generados con éxito.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro.zip")
