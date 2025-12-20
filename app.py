@@ -28,14 +28,13 @@ def proper_elegante(texto):
     excepciones = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del']
     resultado = []
     for i, p in enumerate(palabras):
-        if i == 0 or palabras[i-1].endswith('.') or p not in excepciones:
+        if i == 0 or (i > 0 and palabras[i-1].endswith('.')) or p not in excepciones:
             resultado.append(p.capitalize())
         else:
             resultado.append(p)
     return " ".join(resultado)
 
 def forzar_dos_lineas(texto):
-    """Aplica salto de línea solo si no es Sucursal"""
     if not texto or "\n" in texto: return texto
     palabras = texto.split()
     if len(palabras) < 2: return texto
@@ -77,9 +76,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v2", layout="wide")
-st.title("🚀 Generador Pro: Centrado Horizontal y Proper Elegante")
+st.set_page_config(page_title="Provident Pro Final Fix", layout="wide")
+st.title("🚀 Generador Pro: Centrado Total y Nomenclatura Elegante")
 
+# Sidebar (Carga de datos simplificada para el ejemplo)
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -122,48 +122,51 @@ if st.session_state.raw_records:
                         dt = datetime.strptime(f_fecha, '%Y-%m-%d')
                         f_suc = str(f.get('Sucursal', '')).strip()
                         f_muni = str(f.get('Municipio', '')).strip()
+                        f_tipo = str(f.get('Tipo', '')).strip()
                         f_punto = str(f.get('Punto de reunion', '')).strip()
                         f_ruta = str(f.get('Ruta a seguir', '')).strip()
                         f_seccion = str(f.get('Seccion', '')).strip().upper()
-                        f_tipo = str(f.get('Tipo', '')).strip()
                         
+                        # Selección de lugar corto
                         opciones = [o for o in [f_punto, f_ruta] if o]
                         lugar_corto = min(opciones, key=len) if opciones else ""
 
-                        # REEMPLAZOS CON LÓGICA DE PROPER Y LÍNEAS
+                        # REEMPLAZOS
                         reemplazos = {
                             "<<Tipo>>": forzar_dos_lineas(proper_elegante(f_tipo)),
                             "<<Confechor>>": formatear_confechor(f_fecha, f.get('Hora', '')),
                             "<<Consuc>>": forzar_dos_lineas(proper_elegante(f"Sucursal {f_suc}, {f_muni}")),
                             "<<Concat>>": forzar_dos_lineas(proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}")),
-                            "<<Sucursal>>": proper_elegante(f_suc), # Una sola línea
+                            "<<Sucursal>>": proper_elegante(f_suc),
                             "<<Seccion>>": f_seccion 
                         }
 
-                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[f.get('Tipo')]))
+                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[f_tipo]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    # Alineación Vertical
                                     shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
                                     for paragraph in shape.text_frame.paragraphs:
-                                        # Alineación Horizontal (CENTRO)
+                                        # ¡ESTO ASEGURA EL CENTRADO DE CADA LÍNEA!
                                         paragraph.alignment = PP_ALIGN.CENTER
                                         
                                         full_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
                                             if tag in full_text:
+                                                # Limpiamos todos los fragmentos y dejamos solo uno con el texto nuevo
                                                 new_val = full_text.replace(tag, val)
-                                                for r in paragraph.runs: r.text = ""
+                                                for r in paragraph.runs:
+                                                    r.text = ""
                                                 run = paragraph.add_run() if not paragraph.runs else paragraph.runs[0]
                                                 run.text = new_val
                                                 run.font.color.rgb = AZUL_CELESTE
                                                 run.font.bold = True
                                                 
                                                 if tag == "<<Confechor>>": run.font.size = Pt(32)
-                                                elif tag == "<<Sucursal>>": run.font.size = Pt(38)
+                                                elif tag in ["<<Sucursal>>", "<<Seccion>>"]: run.font.size = Pt(38)
                                                 else: run.font.size = Pt(46)
 
+                                # Fotos
                                 if modo == "Reportes":
                                     tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                                     for tf in tags_f:
@@ -177,12 +180,19 @@ if st.session_state.raw_records:
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            # Nomenclatura del archivo
-                            nom_archivo = f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year} - {f_tipo.upper()}, {f_suc.upper()} - {lugar_corto.upper()}, {f_muni.upper()}"
-                            nom_archivo = nom_archivo[:140] + (".pdf" if modo == "Reportes" else ".jpg")
+                            # NOMENCLATURA EN PROPER ELEGANTE
+                            # Formato: Mes Dd de Aaaa - Lugar, Municipio - Tipo, Sucursal.pdf
+                            fecha_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year}")
+                            lugar_nom = proper_elegante(lugar_corto)
+                            muni_nom = proper_elegante(f_muni)
+                            tipo_nom = proper_elegante(f_tipo)
+                            suc_nom = proper_elegante(f_suc)
                             
-                            folder_mes = f"{dt.month:02d} - {MESES_ES[dt.month-1]}"
-                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{modo}/{proper_elegante(f_suc)}/{nom_archivo}"
+                            nom_archivo = f"{fecha_nom} - {lugar_nom}, {muni_nom} - {tipo_nom}, {suc_nom}"
+                            ext = ".pdf" if modo == "Reportes" else ".jpg"
+                            nom_archivo = nom_archivo[:140] + ext
+                            
+                            ruta_zip = f"Provident/{dt.year}/{dt.month:02d}/{modo}/{suc_nom}/{nom_archivo}"
                             
                             if modo == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
@@ -192,5 +202,5 @@ if st.session_state.raw_records:
                                     img_io = BytesIO(); imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                st.success("✅ ¡Hecho! Tipo en Proper Elegante y Sucursal a una línea.")
-                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_v2.zip")
+                st.success("✅ Generación lista con centrado forzado y nombres en Proper Elegante.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Correcto.zip")
