@@ -15,10 +15,8 @@ BASE_DIR = "Plantillas"
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 if 'map_memoria' not in st.session_state: st.session_state.map_memoria = {}
 
-# --- LÓGICA PROPER ELEGANTE (ESPAÑOL MX / SIN ACENTOS) ---
 def proper_elegante(texto):
     if not texto or str(texto).lower() == "none": return ""
-    # Quitar acentos
     texto = ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                   if unicodedata.category(c) != 'Mn')
     palabras = texto.lower().split()
@@ -48,7 +46,7 @@ def formatear_hora_mx(hora_raw):
         return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
     except: return str(hora_raw)
 
-# --- MOTORES DE CONVERSIÓN ---
+# --- MOTOR DE CONVERSIÓN ---
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
@@ -57,23 +55,13 @@ def generar_pdf(pptx_bytes):
         subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
         pdf_path = path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f: data = f.read()
-        os.remove(path)
-        if os.path.exists(pdf_path): os.remove(pdf_path)
+        os.remove(path); os.remove(pdf_path) if os.path.exists(pdf_path) else None
         return data
-    except: return None
-
-def generar_png(pdf_bytes):
-    try:
-        images = convert_from_bytes(pdf_bytes)
-        if images:
-            buf = BytesIO()
-            images[0].save(buf, format='PNG')
-            return buf.getvalue()
     except: return None
 
 # --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Proper Elegante & Estructura")
+st.title("🚀 Generador Pro: Estilo Preservado")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -91,7 +79,7 @@ with st.sidebar:
                 st.rerun()
 
 if st.session_state.raw_records:
-    # --- PROCESAR TABLA PARA QUE SEA PROPER ELEGANTE ---
+    # Mostramos la tabla estilizada
     data_list = []
     for r in st.session_state.raw_records:
         f = r['fields']
@@ -99,106 +87,77 @@ if st.session_state.raw_records:
             "Tipo": proper_elegante(f.get("Tipo")),
             "Sucursal": proper_elegante(f.get("Sucursal")),
             "Municipio": proper_elegante(f.get("Municipio")),
-            "Fecha": f.get("Fecha", ""),
-            "_original_tipo": f.get("Tipo") # Para mapeo interno
+            "Fecha": f.get("Fecha", "")
         })
-    
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
-    
-    st.write("### 📋 Registros Disponibles (Vista Proper Elegante)")
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        st.divider()
         opcion_salida = st.radio("Tipo a generar:", ["Postales", "Reportes"], horizontal=True)
-        # La carpeta física sigue siendo REPORTES/POSTALES pero la lógica de ruta usará Proper
-        folder_fisica = os.path.join(BASE_DIR, opcion_salida.upper()) 
+        folder_fisica = os.path.join(BASE_DIR, opcion_salida.upper())
+        archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         
-        if os.path.exists(folder_fisica):
-            archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
-            tipos_en_seleccion = df_edit.loc[sel_idx, "Tipo"].unique()
-            
-            st.write("### 📂 Asignar Plantillas")
-            cols = st.columns(len(tipos_en_seleccion))
-            for i, t_proper in enumerate(tipos_en_seleccion):
-                with cols[i]:
-                    idx_mem = 0
-                    if t_proper in st.session_state.map_memoria:
-                        if st.session_state.map_memoria[t_proper] in archivos_pptx:
-                            idx_mem = archivos_pptx.index(st.session_state.map_memoria[t_proper])
+        # Mapeo de plantillas por tipo
+        tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
+        for t_p in tipos_sel:
+            if t_p not in st.session_state.map_memoria:
+                st.session_state.map_memoria[t_p] = archivos_pptx[0] if archivos_pptx else ""
+
+        if st.button("🔥 GENERAR ZIP"):
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
+                for idx in sel_idx:
+                    rec = st.session_state.raw_records[idx]['fields']
+                    tipo_p = proper_elegante(rec.get('Tipo'))
                     
-                    sel_p = st.selectbox(f"{t_proper}:", archivos_pptx, index=idx_mem, key=f"s_{t_proper}")
-                    st.session_state.map_memoria[t_proper] = sel_p
+                    # 1. PREPARAR DATOS (CONCATENACIÓN)
+                    suc = str(rec.get('Sucursal') or '').strip()
+                    muni = str(rec.get('Municipio') or '').strip()
+                    punto = str(rec.get('Punto de reunion') or '').strip()
+                    ruta = str(rec.get('Ruta a seguir') or '').strip()
+                    secc = str(rec.get('Seccion') or '').strip()
 
-            if st.button("🔥 GENERAR ZIP ESTRUCTURADO"):
-                zip_buf = BytesIO()
-                with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                    for idx in sel_idx:
-                        # Recuperar campos originales de Airtable
-                        rec = st.session_state.raw_records[idx]['fields']
-                        
-                        with st.status(f"Procesando: {proper_elegante(rec.get('Sucursal'))}"):
-                            # 1. LÓGICA DE PLACEHOLDERS (CONCAT, CONFECHA, CONHORA, CONSUC)
-                            suc = str(rec.get('Sucursal') or '').strip()
-                            muni = str(rec.get('Municipio') or '').strip()
-                            punto = str(rec.get('Punto de reunion') or '').strip()
-                            ruta = str(rec.get('Ruta a seguir') or '').strip()
-                            secc = str(rec.get('Seccion') or '').strip()
-                            
-                            # <<Consuc>>
-                            consuc_txt = f"Sucursal {suc}" + (f", {muni}" if muni else "")
-                            
-                            # <<Concat>> (Punto, Ruta, Municipio, Seccion)
-                            partes = [p for p in [punto, ruta] if p]
-                            c_base = ", ".join(partes)
-                            if muni: c_base += f", Municipio {muni}"
-                            if secc: c_base += f", Seccion {secc}"
+                    reemplazos = {
+                        "<<Consuc>>": proper_elegante(f"Sucursal {suc}" + (f", {muni}" if muni else "")),
+                        "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
+                        "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
+                        "<<Concat>>": proper_elegante(", ".join([p for p in [punto, ruta] if p]) + (f", Municipio {muni}" if muni else "") + (f", Seccion {secc}" if secc else "")),
+                        "<<Sucursal>>": proper_elegante(suc)
+                    }
 
-                            reemplazos = {
-                                "<<Consuc>>": proper_elegante(consuc_txt),
-                                "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
-                                "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
-                                "<<Concat>>": proper_elegante(c_base),
-                                "<<Sucursal>>": proper_elegante(suc)
-                            }
+                    # 2. PROCESAR PPTX CON PRESERVACIÓN DE ESTILO
+                    prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[tipo_p]))
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if shape.has_text_frame:
+                                for paragraph in shape.text_frame.paragraphs:
+                                    for run in paragraph.runs:
+                                        for tag, val in reemplazos.items():
+                                            if tag in run.text:
+                                                # Guardamos el estilo original antes del reemplazo
+                                                font_size = run.font.size
+                                                font_name = run.font.name
+                                                font_bold = run.font.bold
+                                                font_color = run.font.color.rgb if run.font.color and hasattr(run.font.color, 'rgb') else None
+                                                
+                                                # Realizamos el reemplazo
+                                                run.text = run.text.replace(tag, val)
+                                                
+                                                # Forzamos la restauración del estilo
+                                                run.font.size = font_size
+                                                run.font.name = font_name
+                                                run.font.bold = font_bold
+                                                if font_color: run.font.color.rgb = font_color
 
-                            # 2. CARGAR PLANTILLA USANDO MEMORIA
-                            t_key = proper_elegante(rec.get('Tipo'))
-                            path_pptx = os.path.join(folder_fisica, st.session_state.map_memoria[t_key])
-                            prs = Presentation(path_pptx)
-                            
-                            for slide in prs.slides:
-                                for shape in slide.shapes:
-                                    if shape.has_text_frame:
-                                        for paragraph in shape.text_frame.paragraphs:
-                                            for run in paragraph.runs:
-                                                for tag, val in reemplazos.items():
-                                                    if tag in run.text:
-                                                        run.text = run.text.replace(tag, val)
+                    # 3. GUARDADO
+                    pp_io = BytesIO(); prs.save(pp_io)
+                    pdf_data = generar_pdf(pp_io.getvalue())
+                    if pdf_data:
+                        dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
+                        nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + (".png" if opcion_salida == "Postales" else ".pdf")
+                        ruta_final = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{opcion_salida}/{proper_elegante(suc)}/{nombre}"
+                        zip_f.writestr(ruta_final, pdf_data)
 
-                            # 3. GUARDADO Y ESTRUCTURA ZIP (Proper Elegante)
-                            pp_io = BytesIO(); prs.save(pp_io)
-                            pdf_data = generar_pdf(pp_io.getvalue())
-                            
-                            if pdf_data:
-                                try: dt = datetime.strptime(str(rec.get('Fecha')), '%Y-%m-%d')
-                                except: dt = datetime.now()
-                                
-                                mes_nombre = proper_elegante(dt.strftime('%m - %B'))
-                                ext = ".png" if opcion_salida == "Postales" else ".pdf"
-                                nombre_archivo = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + ext
-                                
-                                # Provident / Año / Mes / Uso / Sucursal / Archivo
-                                ruta_zip = (f"Provident/{dt.year}/{mes_nombre}/{opcion_salida}/"
-                                           f"{proper_elegante(suc)}/{nombre_archivo}")
-                                
-                                if opcion_salida == "Reportes":
-                                    zip_f.writestr(ruta_zip, pdf_data)
-                                else:
-                                    img = generar_png(pdf_data)
-                                    if img: zip_f.writestr(ruta_zip, img)
-
-                st.success("✅ Proceso completado exitosamente.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident.zip")
