@@ -71,8 +71,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v16", layout="wide")
-st.title("🚀 Generador Pro: Selección Integrada y Progreso")
+st.set_page_config(page_title="Provident Pro v18", layout="wide")
+st.title("🚀 Generador Pro: Placeholders en 50pt")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -88,25 +88,25 @@ with st.sidebar:
             if st.button("🔄 CARGAR DATOS"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 st.session_state.raw_records = r_reg.json().get("records", [])
+                st.session_state.config = cargar_config() # Recargar para asegurar vínculos
                 st.rerun()
     
     st.divider()
     st.header("📂 Gestión de Vínculos")
-    if st.button("💾 GUARDAR TODO EN JSON", use_container_width=True, type="primary"):
+    if st.button("💾 GUARDAR CAMBIOS EN JSON", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
-        st.toast("Configuración guardada")
+        st.toast("Vínculos guardados exitosamente")
 
     if st.session_state.config["plantillas"]:
         for t_key, p_val in list(st.session_state.config["plantillas"].items()):
-            col_t, col_b = st.columns([4, 1])
-            col_t.caption(f"**{t_key}**")
-            if col_b.button("🗑️", key=f"del_{t_key}"):
+            c1, c2 = st.columns([4, 1])
+            c1.caption(f"**{t_key}**")
+            if c2.button("🗑️", key=f"del_{t_key}"):
                 del st.session_state.config["plantillas"][t_key]
                 guardar_config_json(st.session_state.config)
                 st.rerun()
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    # Obtener todas las columnas
     all_ordered_keys = []
     for r in st.session_state.raw_records:
         for key in r['fields'].keys():
@@ -114,36 +114,24 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
     
     df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     
-    # Configurar visualización
     saved_cols = st.session_state.config.get("columnas_visibles", [])
     valid_defaults = [c for c in saved_cols if c in all_ordered_keys]
     if not valid_defaults: valid_defaults = all_ordered_keys[:8]
     cols_to_show = st.multiselect("Columnas visibles:", all_ordered_keys, default=valid_defaults)
     st.session_state.config["columnas_visibles"] = cols_to_show
 
-    # Asegurar columna Tipo para la lógica de plantillas
     cols_para_df = list(cols_to_show)
     if "Tipo" not in cols_para_df: cols_para_df.append("Tipo")
     df_display = df[[c for c in cols_para_df if c in df.columns]].copy()
     df_display.insert(0, "Seleccionar", False)
     
-    # --- EDITOR DE DATOS CON CHECKBOX EN TÍTULO ---
+    # Checkbox de selección masiva en título integrado
     column_config_editor = {
-        "Seleccionar": st.column_config.CheckboxColumn(
-            "Seleccionar",
-            help="Marca el checkbox del título para seleccionar todos",
-            default=False,
-        ),
+        "Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False),
         "Tipo": None if "Tipo" not in cols_to_show else st.column_config.TextColumn("Tipo")
     }
 
-    df_edit = st.data_editor(
-        df_display, 
-        use_container_width=True, 
-        hide_index=True, 
-        column_config=column_config_editor
-    )
-    
+    df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True, column_config=column_config_editor)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
@@ -157,15 +145,15 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
         c1, c2 = st.columns(2)
         for i, t in enumerate(tipos_seleccionados):
             t_str = str(t)
-            p_g = st.session_state.config["plantillas"].get(t_str)
+            p_mem = st.session_state.config["plantillas"].get(t_str)
             with (c1 if i % 2 == 0 else c2):
-                idx_d = archivos_pptx.index(p_g) if p_g in archivos_pptx else 0
-                sel_p = st.selectbox(f"Tipo: {t_str}", archivos_pptx, index=idx_d, key=f"v_{t_str}")
+                idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
+                sel_p = st.selectbox(f"Tipo: {t_str}", archivos_pptx, index=idx_def, key=f"v_{t_str}")
                 st.session_state.config["plantillas"][t_str] = sel_p
 
         if st.button("🔥 INICIAR GENERACIÓN", use_container_width=True, type="primary"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+            p_bar = st.progress(0)
+            status = st.empty()
             zip_buf = BytesIO()
             
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
@@ -180,8 +168,8 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     f_punto, f_ruta = str(record.get('Punto de reunion', '')).strip(), str(record.get('Ruta a seguir', '')).strip()
                     lugar_corto = proper_elegante(f_punto if f_punto else f_ruta)
                     
-                    status_text.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
-                    progress_bar.progress((i + 1) / total)
+                    status.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
+                    p_bar.progress((i + 1) / total)
 
                     hora_f = interpretar_hora(record.get('Hora', ''))
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
@@ -203,8 +191,8 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # REGLA: Tipo 64pt, demás 50pt
-                                        run.font.size = Pt(64) if tag == "<<Tipo>>" else Pt(50)
+                                        # TODO EL TEXTO A 50PT SEGÚN INSTRUCCIÓN
+                                        run.font.size = Pt(50)
                                         shape.text_frame.word_wrap = True
 
                     if modo == "Reportes":
@@ -233,5 +221,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status_text.success(f"✅ ¡Completado! {total} archivos procesados.")
+            status.success(f"✅ ¡Completado! {total} archivos procesados.")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
