@@ -8,7 +8,14 @@ import subprocess
 import tempfile
 import zipfile
 from datetime import datetime
+import locale
 from pdf2image import convert_from_bytes
+
+# Intentar establecer idioma español para los nombres de los meses
+try:
+    locale.setlocale(locale.LC_TIME, "es_ES.utf8")
+except:
+    pass
 
 # --- CONFIGURACIÓN FIJA ---
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
@@ -45,43 +52,44 @@ def generar_png(pdf_bytes):
     except: return None
 
 def formatear_nombre_archivo(fila, ext):
-    """Lógica compleja de nombres de archivo y limpieza de comas"""
-    # 1. Obtener fecha de Airtable o actual
+    """Lógica de nombres de archivo con manejo de nulos y limpieza de comas"""
+    # Manejo seguro de nulos para campos de texto
+    punto = str(fila.get('Punto de reunion') or '').strip()
+    ruta = str(fila.get('Ruta a seguir') or '').strip()
+    municipio = str(fila.get('Municipio') or '').strip()
+    tipo = str(fila.get('Tipo') or 'TIPO').strip()
+    sucursal = str(fila.get('Sucursal') or 'SUCURSAL').strip()
+    
+    # Manejo de Fecha
     try:
         dt = datetime.strptime(fila['Fecha'], '%Y-%m-%d')
+        fecha_str = dt.strftime('%A %B %d de %Y').lower()
     except:
-        dt = datetime.now()
-    
-    fecha_str = dt.strftime('%d de %B de %Y').lower() # dddd mmmm dd de aaaa (aprox)
-    tipo = fila.get('Tipo', 'TIPO')
-    sucursal = fila.get('Sucursal', 'SUCURSAL')
-    punto = fila.get('Punto de reunion', '').strip()
-    ruta = fila.get('Ruta a seguir', '').strip()
-    municipio = fila.get('Municipio', '').strip()
+        fecha_str = datetime.now().strftime('%d de %m de %Y')
 
-    # 2. Lógica de selección por longitud (si es muy largo, elegir el más corto)
-    if len(punto) + len(ruta) > 100:
+    # Lógica de longitud: si el nombre es muy largo, elegir el más corto entre punto y ruta
+    if len(punto) + len(ruta) > 80:
         if len(punto) > len(ruta) and ruta:
             punto = ""
         elif punto:
             ruta = ""
 
-    # 3. Construcción con limpieza de comas
-    componentes = [punto, ruta]
-    componentes = [c for c in componentes if c] # Elimina vacíos
-    centro = ", ".join(componentes)
+    # Construcción del bloque central (limpieza de comas automática)
+    partes_centro = [p for p in [punto, ruta] if p]
+    centro = " - ".join(partes_centro)
     
-    final_str = f"{fecha_str} - {tipo} {sucursal}"
+    # Nombre final base
+    nombre = f"{fecha_str} - {tipo} {sucursal}"
     if centro:
-        final_str += f" - {centro}"
+        nombre += f" - {centro}"
     if municipio:
-        final_str += f", {municipio}"
+        nombre += f", {municipio}"
     
-    # Limpiar caracteres prohibidos en nombres de archivo
+    # Limpiar caracteres prohibidos en Windows/Linux
     for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
-        final_str = final_str.replace(char, '')
-
-    return f"{final_str}.{ext}"
+        nombre = nombre.replace(char, '')
+    
+    return f"{nombre[:200]}.{ext}" # Limitar a 200 caracteres para seguridad de ruta
 
 # --- INTERFAZ ---
 st.set_page_config(page_title="Generador Provident Pro", layout="wide")
@@ -107,71 +115,70 @@ with st.sidebar:
             st.session_state.registros_raw = r_regs.json().get("records", [])
             
             df = pd.DataFrame([r['fields'] for r in st.session_state.registros_raw])
-            # Incluimos los campos necesarios para el nombre del archivo
-            campos_necesarios = ["Tipo", "Sucursal", "Seccion", "Municipio", "Fecha", "Punto de reunion", "Ruta a seguir"]
-            cols_v = [c for c in campos_necesarios if c in df.columns]
+            # Asegurar que existan las columnas para evitar KeyError
+            for col in ["Tipo", "Sucursal", "Municipio", "Fecha", "Punto de reunion", "Ruta a seguir"]:
+                if col not in df.columns: df[col] = ""
+            
+            cols_v = ["Tipo", "Sucursal", "Municipio", "Fecha"]
             df_display = df[cols_v].copy()
             df_display.insert(0, "Seleccionar", False)
             st.session_state.df_trabajo = df_display
 
+# --- PANEL PRINCIPAL ---
 if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
     st.subheader("1. Selección de Registros")
     df_editado = st.data_editor(st.session_state.df_trabajo, use_container_width=True, hide_index=True)
-    seleccionados = df_editado[df_editado["Seleccionar"] == True]
+    seleccionados_indices = df_editado.index[df_editado["Seleccionar"] == True].tolist()
 
-    if not seleccionados.empty:
+    if seleccionados_indices:
         st.divider()
         uso_final = st.radio("Seleccione uso final:", ["POSTALES", "REPORTES"], horizontal=True)
         folder_path = os.path.join(BASE_DIR, uso_final)
         
         if os.path.exists(folder_path):
             archivos_pptx = [f for f in os.listdir(folder_path) if f.endswith('.pptx')]
-            tipos_unicos = seleccionados["Tipo"].unique()
+            tipos_unicos = df_editado.loc[seleccionados_indices, "Tipo"].unique()
             mapping_manual = {t: st.selectbox(f"Plantilla para {uso_final} TIPO: {t}", archivos_pptx, key=t) for t in tipos_unicos}
 
             if st.button("🔥 GENERAR ZIP ESTRUCTURADO"):
                 zip_buffer = BytesIO()
                 with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
-                    for idx, fila in seleccionados.iterrows():
-                        with st.status(f"Procesando {fila['Sucursal']}..."):
+                    for idx in seleccionados_indices:
+                        fila_original = st.session_state.registros_raw[idx]['fields']
+                        with st.status(f"Procesando {fila_original.get('Sucursal', 'Sin nombre')}..."):
+                            
                             # Carpeta dinámica
                             try:
-                                fecha_dt = datetime.strptime(fila['Fecha'], '%Y-%m-%d')
+                                f_dt = datetime.strptime(fila_original.get('Fecha', ''), '%Y-%m-%d')
                             except:
-                                fecha_dt = datetime.now()
+                                f_dt = datetime.now()
                             
-                            anio = fecha_dt.strftime('%Y')
-                            mes = fecha_dt.strftime('%m - %B').lower()
-                            uso_folder = "Reportes" if uso_final == "REPORTES" else "Postales"
-                            sucursal_folder = fila['Sucursal']
-                            
-                            # Ruta interna ZIP: Provident/AAAA/mm - mmmm/Uso/Sucursal/
-                            ruta_zip_base = f"Provident/{anio}/{mes}/{uso_folder}/{sucursal_folder}/"
+                            path_zip = f"Provident/{f_dt.year}/{f_dt.strftime('%m - %B').lower()}/{uso_final.capitalize()}/{fila_original.get('Sucursal', 'General')}/"
                             
                             # Procesar PPTX
-                            datos_record = st.session_state.registros_raw[idx]['fields']
-                            prs = Presentation(os.path.join(folder_path, mapping_manual[fila['Tipo']]))
+                            prs = Presentation(os.path.join(folder_path, mapping_manual[fila_original.get('Tipo')]))
                             for slide in prs.slides:
                                 for shape in slide.shapes:
                                     if shape.has_text_frame:
                                         for p in shape.text_frame.paragraphs:
                                             for run in p.runs:
-                                                for k, v in datos_record.items():
-                                                    if f"{{{{{k}}}}}" in run.text:
-                                                        run.text = run.text.replace(f"{{{{{k}}}}}", limpiar_adjuntos(v))
+                                                for k, v in fila_original.items():
+                                                    tag = f"{{{{{k}}}}}"
+                                                    if tag in run.text:
+                                                        run.text = run.text.replace(tag, limpiar_adjuntos(v))
                             
-                            pptx_io = BytesIO(); prs.save(pptx_io)
-                            pdf_data = generar_pdf(pptx_io.getvalue())
+                            pp_io = BytesIO(); prs.save(pp_io)
+                            pdf_bin = generar_pdf(pp_io.getvalue())
                             
-                            if pdf_data:
+                            if pdf_bin:
                                 ext = "pdf" if uso_final == "REPORTES" else "png"
-                                nombre_f = formatear_nombre_archivo(fila, ext)
+                                nombre_arc = formatear_nombre_archivo(fila_original, ext)
                                 
                                 if uso_final == "REPORTES":
-                                    zip_file.writestr(ruta_zip_base + nombre_f, pdf_data)
+                                    zip_file.writestr(path_zip + nombre_arc, pdf_bin)
                                 else:
-                                    png_data = generar_png(pdf_data)
-                                    if png_data: zip_file.writestr(ruta_zip_base + nombre_f, png_data)
+                                    png_bin = generar_png(pdf_bin)
+                                    if png_bin: zip_file.writestr(path_zip + nombre_arc, png_bin)
 
-                st.success("✅ ZIP Estructurado creado con éxito")
-                st.download_button("📥 DESCARGAR ZIP COMPLETO", zip_buffer.getvalue(), f"Provident_{uso_final}.zip", "application/zip")
+                st.success("✅ ¡ZIP Generado!")
+                st.download_button("📥 DESCARGAR RESULTADOS", zip_buffer.getvalue(), f"Provident_{datetime.now().strftime('%Y%m%d')}.zip", "application/zip")
