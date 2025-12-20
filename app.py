@@ -35,6 +35,13 @@ def formatear_fecha_mx(fecha_str):
         return proper_elegante(f"{dt.day:02d} de {MESES_ES[dt.month-1]} de {dt.year}")
     except: return ""
 
+def formatear_hora_mx(hora_raw):
+    if not hora_raw: return ""
+    try:
+        t = datetime.strptime(str(hora_raw).strip(), "%H:%M")
+        return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
+    except: return str(hora_raw)
+
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
@@ -50,9 +57,8 @@ def generar_pdf(pptx_bytes):
 
 # --- APP ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Nomenclatura Inteligente")
+st.title("🚀 Generador Pro: Nomenclatura y Contenido Restaurado")
 
-# ... (Bloque de carga de Sidebar Airtable omitido para brevedad, se mantiene igual) ...
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -76,7 +82,7 @@ if st.session_state.raw_records:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        op_salida = st.radio("Formato:", ["Postales", "Reportes"], horizontal=True)
+        op_salida = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, op_salida.upper())
         
         if os.path.exists(folder_fisica):
@@ -87,7 +93,7 @@ if st.session_state.raw_records:
                 with cols[i]:
                     st.session_state.map_memoria[t_p] = st.selectbox(f"Plantilla {t_p}:", archivos_pptx, key=f"s_{t_p}")
 
-            if st.button("🔥 GENERAR ZIP"):
+            if st.button("🔥 GENERAR TODO"):
                 progreso_bar = st.progress(0)
                 status_text = st.empty()
                 zip_buf = BytesIO()
@@ -96,47 +102,73 @@ if st.session_state.raw_records:
                     for i, idx in enumerate(sel_idx):
                         rec = st.session_state.raw_records[idx]['fields']
                         
-                        # 1. LIMPIEZA DE CAMPOS PARA NOMBRE
-                        fecha_f = formatear_fecha_mx(rec.get('Fecha'))
-                        tipo_f = str(rec.get('Tipo') or '').upper()
-                        suc_f = str(rec.get('Sucursal') or '').upper()
+                        # --- 1. LÓGICA DE DATOS (CONCATENACIÓN CONTINUA) ---
                         punto = str(rec.get('Punto de reunion') or '').strip()
                         ruta = str(rec.get('Ruta a seguir') or '').strip()
                         muni = str(rec.get('Municipio') or '').strip()
                         secc = str(rec.get('Seccion') or '').strip()
+                        suc_raw = str(rec.get('Sucursal') or '').strip()
 
-                        # Construcción dinámica de la parte final (Punto, Ruta, Municipio)
-                        partes_finales = [p for p in [punto, ruta] if p]
-                        if muni: partes_finales.append(muni)
-                        
-                        str_final = ", ".join(partes_finales)
-                        nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {str_final}"
-                        
-                        # Lógica de recorte si es demasiado largo (> 150 caracteres)
-                        if len(nombre_base) > 150:
-                            # Omitimos el campo más corto entre Punto y Ruta para ganar espacio
-                            if not punto or not ruta:
-                                partes_reducidas = [p for p in [punto, ruta] if p]
-                            else:
-                                partes_reducidas = [ruta] if len(punto) < len(ruta) else [punto]
-                            
-                            if muni: partes_reducidas.append(muni)
-                            str_final = ", ".join(partes_reducidas)
-                            nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {str_final}"
+                        # Texto para el Placeholder (Continuo)
+                        c_list = [p for p in [punto, ruta] if p]
+                        if muni: c_list.append(f"Municipio {muni}")
+                        if secc: c_list.append(f"Seccion {secc}")
+                        concat_placeholder = proper_elegante(", ".join(c_list))
 
-                        nombre_limpio = proper_elegante(nombre_base) + (".png" if op_salida == "Postales" else ".pdf")
+                        reemplazos = {
+                            "<<Consuc>>": proper_elegante(f"Sucursal {suc_raw}" + (f", {muni}" if muni else "")),
+                            "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
+                            "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
+                            "<<Concat>>": concat_placeholder,
+                            "<<Sucursal>>": proper_elegante(suc_raw)
+                        }
 
-                        # 2. PROCESAMIENTO PPTX (Igual al anterior con multilínea gigante)
+                        # --- 2. PROCESAMIENTO PPTX (RESTAURADO) ---
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[proper_elegante(rec.get('Tipo'))]))
-                        # ... (Aquí va el bloque de reemplazo de tags idéntico al anterior) ...
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if shape.has_text_frame:
+                                    shape.text_frame.word_wrap = True
+                                    for paragraph in shape.text_frame.paragraphs:
+                                        full_txt = "".join(r.text for r in paragraph.runs)
+                                        for tag, val in reemplazos.items():
+                                            if tag in full_txt:
+                                                new_txt = full_txt.replace(tag, val)
+                                                # Escalado Gigante
+                                                if tag == "<<Concat>>": size = 42 if len(new_txt) < 60 else 36
+                                                elif tag == "<<Conhora>>": size = 42
+                                                else: size = 42 if len(new_txt) < 30 else 32
+                                                
+                                                run = paragraph.runs[0]
+                                                run.text = new_txt
+                                                run.font.size = Pt(size)
+                                                for r_idx in range(1, len(paragraph.runs)):
+                                                    paragraph.runs[r_idx].text = ""
+
+                        # --- 3. NOMENCLATURA DEL ARCHIVO ---
+                        fecha_f = formatear_fecha_mx(rec.get('Fecha'))
+                        tipo_f, suc_f = str(rec.get('Tipo') or '').upper(), suc_raw.upper()
                         
-                        # 3. GUARDADO ESTRUCTURADO
+                        partes_nom = [p for p in [punto, ruta] if p]
+                        if muni: partes_nom.append(muni)
+                        
+                        str_nom = ", ".join(partes_nom)
+                        nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {str_nom}"
+                        
+                        if len(nombre_base) > 150:
+                            partes_red = [ruta] if (punto and ruta and len(punto) < len(ruta)) else ([punto] if punto else [])
+                            if muni: partes_red.append(muni)
+                            nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {', '.join(partes_red)}"
+
+                        nombre_final = proper_elegante(nombre_base) + (".png" if op_salida == "Postales" else ".pdf")
+
+                        # --- 4. GUARDADO ---
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
                             folder_mes = f"{dt.month:02d} - {MESES_ES[dt.month-1]}"
-                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{op_salida}/{proper_elegante(suc_f)}/{nombre_limpio}"
+                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{op_salida}/{proper_elegante(suc_raw)}/{nombre_final}"
                             
                             if op_salida == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
@@ -147,7 +179,7 @@ if st.session_state.raw_records:
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
                         
                         progreso_bar.progress((i + 1) / len(sel_idx))
-                        status_text.info(f"Generado: {nombre_limpio[:50]}...")
+                        status_text.info(f"Listo: {nombre_final[:40]}...")
 
-                st.success("✅ ZIP Generado")
-                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Final.zip")
+                st.success("✅ Proceso completado con éxito")
+                st.download_button("📥 DESCARGAR ZIP FINAL", zip_buf.getvalue(), "Provident_Pro_Final.zip")
