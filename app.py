@@ -17,16 +17,13 @@ BASE_DIR = "Plantillas"
 
 # --- TRANSFORMACIÓN DE TEXTO ---
 def procesar_texto_elegante(texto):
-    """Minúsculas, sin acentos, sin saltos, sin dobles espacios, luego Proper Case"""
     if not texto or str(texto).lower() == "none":
         return ""
-    # 1. Quitar saltos de línea y dobles espacios
     texto = str(texto).replace('\n', ' ').replace('\r', ' ')
     texto = ' '.join(texto.split())
-    # 2. Quitar acentos y minúsculas
+    # Quitar acentos
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto)
                   if unicodedata.category(c) != 'Mn').lower()
-    # 3. Proper Case (Elegante)
     return texto.title()
 
 def formatear_fecha_es(fecha_str):
@@ -35,7 +32,7 @@ def formatear_fecha_es(fecha_str):
         meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", 
                  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
         dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
-        # Formato solicitado: EEEE dd de mmmm de aaaa (sin acentos por procesar_texto)
+        # Formato: jueves 20 de mayo de 2024 (a dos líneas se maneja en el diseño del PPTX)
         res = f"{dias[dt.weekday()]} {dt.day} de {meses[dt.month-1]} de {dt.year}"
         return procesar_texto_elegante(res)
     except: return ""
@@ -43,7 +40,7 @@ def formatear_fecha_es(fecha_str):
 def formatear_hora_es(hora_raw):
     if not hora_raw: return ""
     try:
-        # Asumiendo entrada HH:MM
+        # Intenta convertir formato HH:MM a 12h con a.m./p.m.
         t = datetime.strptime(str(hora_raw).strip(), "%H:%M")
         formato = t.strftime("%I:%M %p").lower()
         return formato.replace("am", "a.m.").replace("pm", "p.m.")
@@ -72,11 +69,10 @@ def generar_png(pdf_bytes):
             return buf.getvalue()
     except: return None
 
-# --- APP PRINCIPAL ---
+# --- APP ---
 st.set_page_config(page_title="Generador Provident Pro", layout="wide")
-st.title("🚀 Sistema de Generación Masiva")
+st.title("🚀 Generador Masivo (Fix: Etiquetas Invisibles)")
 
-# 1. AIRTABLE (BARRA LATERAL)
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -88,11 +84,10 @@ with st.sidebar:
             tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
             tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
             r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
-            st.session_state.raw_data = r_reg.json().get("records", [])
+            st.session_state.raw_records = r_reg.json().get("records", [])
 
-# 2. PROCESAMIENTO
-if 'raw_data' in st.session_state and st.session_state.raw_data:
-    df = pd.DataFrame([r['fields'] for r in st.session_state.raw_data])
+if 'raw_records' in st.session_state and st.session_state.raw_records:
+    df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     for c in ["Tipo", "Sucursal", "Fecha", "Hora", "Punto de reunion", "Ruta a seguir", "Municipio", "Seccion"]:
         if c not in df.columns: df[c] = ""
     
@@ -111,62 +106,65 @@ if 'raw_data' in st.session_state and st.session_state.raw_data:
             zip_buf = BytesIO()
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                 for idx in sel_idx:
-                    # Extraer datos reales del registro de Airtable
-                    rec = st.session_state.raw_data[idx]['fields']
+                    rec = st.session_state.raw_records[idx]['fields']
                     
                     with st.status(f"Procesando: {rec.get('Sucursal')}"):
-                        # --- LÓGICA DE CONTENIDO ---
+                        # 1. LÓGICA DE CONCATENACIÓN (PLACEHOLDERS)
                         punto = str(rec.get('Punto de reunion') or '').strip()
                         ruta = str(rec.get('Ruta a seguir') or '').strip()
                         muni = str(rec.get('Municipio') or '').strip()
                         secc = str(rec.get('Seccion') or '').strip()
                         
-                        # Concat inteligente
+                        # Concat inteligente sin comas huérfanas
                         c_partes = [p for p in [punto, ruta] if p]
-                        concat_txt = ", ".join(c_partes)
-                        if muni: concat_txt += f", Municipio {muni}"
-                        if secc: concat_txt += f", Seccion {secc}"
+                        centro = ", ".join(c_partes)
+                        concat_txt = centro
+                        if muni: 
+                            concat_txt += f", Municipio {muni}" if concat_txt else f"Municipio {muni}"
+                        if secc: 
+                            concat_txt += f", Seccion {secc}" if concat_txt else f"Seccion {secc}"
 
-                        tags = {
+                        reemplazos = {
                             "<<Sucursal>>": procesar_texto_elegante(rec.get('Sucursal')),
                             "<<Confecha>>": formatear_fecha_es(rec.get('Fecha')),
                             "<<Conhora>>": formatear_hora_es(rec.get('Hora')),
                             "<<Concat>>": procesar_texto_elegante(concat_txt)
                         }
 
-                        # --- PPTX ---
+                        # 2. REEMPLAZO AGRESIVO EN PPTX
                         prs = Presentation(os.path.join(folder, mapping[rec.get('Tipo')]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    for p in shape.text_frame.paragraphs:
-                                        for run in p.runs:
-                                            for tag, val in tags.items():
-                                                if tag in run.text:
-                                                    run.text = run.text.replace(tag, val)
-                        
-                        # --- CONVERSIÓN ---
+                                    for paragraph in shape.text_frame.paragraphs:
+                                        # Leemos el texto completo del párrafo para evitar el error de etiquetas rotas
+                                        full_text = "".join(run.text for run in paragraph.runs)
+                                        for tag, val in reemplazos.items():
+                                            if tag in full_text:
+                                                # Si la etiqueta existe, reemplazamos en el primer run y vaciamos los demás
+                                                full_text = full_text.replace(tag, val)
+                                                paragraph.runs[0].text = full_text
+                                                for r in range(1, len(paragraph.runs)):
+                                                    paragraph.runs[r].text = ""
+
+                        # 3. GUARDADO Y ZIP
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         
                         if pdf_data:
-                            # --- NOMBRE DE ARCHIVO Y CARPETAS ---
-                            try: dt = datetime.strptime(rec.get('Fecha'), '%Y-%m-%d')
+                            try: dt = datetime.strptime(str(rec.get('Fecha')), '%Y-%m-%d')
                             except: dt = datetime.now()
                             
                             ext = "png" if uso_final == "POSTALES" else "pdf"
                             
-                            # Nombre de archivo dinámico
-                            nom_f = f"{dt.strftime('%d de %m de %Y')} - {rec.get('Tipo')} {rec.get('Sucursal')} - {concat_txt}"
-                            if len(nom_f) > 150: # Si es muy largo, recortamos el concat
-                                nom_f = f"{dt.strftime('%d de %m de %Y')} - {rec.get('Tipo')} {rec.get('Sucursal')} - {punto if len(punto)<len(ruta) else ruta}"
+                            # Nombre archivo elegante
+                            nombre_arc = f"{dt.strftime('%d de %m de %Y')} - {rec.get('Tipo')} {rec.get('Sucursal')}"
+                            nombre_arc = procesar_texto_elegante(nombre_arc) + f".{ext}"
                             
-                            nombre_limpio = f"{procesar_texto_elegante(nom_f)}.{ext}"
-                            
-                            # Ruta interna ZIP: Provident/Año/Mes/Uso/Sucursal/
-                            uso_sub = "Postales" if uso_final == "POSTALES" else "Reportes"
+                            # Estructura de carpetas
                             mes_f = dt.strftime('%m - %B').lower()
-                            ruta_zip = f"Provident/{dt.year}/{procesar_texto_elegante(mes_f)}/{uso_sub}/{procesar_texto_elegante(rec.get('Sucursal'))}/{nombre_limpio}"
+                            sub_uso = "Postales" if uso_final == "POSTALES" else "Reportes"
+                            ruta_zip = f"Provident/{dt.year}/{procesar_texto_elegante(mes_f)}/{sub_uso}/{procesar_texto_elegante(rec.get('Sucursal'))}/{nombre_arc}"
                             
                             if uso_final == "REPORTES":
                                 zip_f.writestr(ruta_zip, pdf_data)
@@ -174,5 +172,4 @@ if 'raw_data' in st.session_state and st.session_state.raw_data:
                                 png = generar_png(pdf_data)
                                 if png: zip_f.writestr(ruta_zip, png)
 
-            st.success("✅ ZIP generado correctamente.")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Estructurado.zip", "application/zip")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident.zip", "application/zip")
