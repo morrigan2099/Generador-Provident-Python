@@ -31,6 +31,25 @@ def proper_elegante(texto):
             resultado.append(p)
     return " ".join(resultado)
 
+def interpretar_hora(hora_txt):
+    if not hora_txt: return ""
+    hora_txt = str(hora_txt).strip().lower()
+    for fmt in ["%H:%M", "%I:%M %p", "%H%M", "%I%p"]:
+        try:
+            dt_hora = datetime.strptime(hora_txt.replace(" ", ""), fmt.replace(" ", ""))
+            return dt_hora.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
+        except: continue
+    return hora_txt
+
+def formatear_confechor_lineal(fecha_str, hora_txt):
+    try:
+        dt = datetime.strptime(str(fecha_str).strip(), '%Y-%m-%d')
+        dia_semana = DIAS_ES[dt.weekday()]
+        mes_nombre = MESES_ES[dt.month-1]
+        hora_formateada = interpretar_hora(hora_txt)
+        return proper_elegante(f"{dia_semana} {mes_nombre} {dt.day:02d} de {dt.year}, {hora_formateada}")
+    except: return f"{fecha_str}, {hora_txt}"
+
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
@@ -44,14 +63,31 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- UI ---
-st.set_page_config(page_title="Provident Pro Custom", layout="wide")
-st.title("🚀 Generador Pro: Tipo Auto-Ajustable (64pt)")
+# --- UI PRINCIPAL ---
+st.set_page_config(page_title="Provident Pro v3", layout="wide")
+st.title("🚀 Generador Pro: Nomenclatura MM y Tipo 64pt")
 
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 
-# ... (Lógica de carga de datos de Airtable se mantiene igual) ...
+# --- LATERAL RESTAURADO ---
+with st.sidebar:
+    st.header("Configuración de Datos")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
+    if r_bases.status_code == 200:
+        base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
+        base_sel = st.selectbox("Selecciona Base:", [""] + list(base_opts.keys()))
+        if base_sel:
+            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
+            if r_tab.status_code == 200:
+                tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
+                tabla_sel = st.selectbox("Selecciona Tabla:", list(tabla_opts.keys()))
+                if st.button("🔄 CARGAR REGISTROS"):
+                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
+                    st.session_state.raw_records = r_reg.json().get("records", [])
+                    st.rerun()
 
+# --- PROCESAMIENTO ---
 if st.session_state.raw_records:
     df_prev = pd.DataFrame([{"Tipo": r['fields'].get("Tipo"), "Sucursal": r['fields'].get("Sucursal"), "Fecha": r['fields'].get("Fecha")} for r in st.session_state.raw_records])
     df_prev.insert(0, "Seleccionar", False)
@@ -67,57 +103,81 @@ if st.session_state.raw_records:
             tipos_unicos = df_edit.loc[sel_idx, "Tipo"].unique()
             map_memoria = {t: st.selectbox(f"Plantilla para {t}:", archivos_pptx, key=f"p_{t}") for t in tipos_unicos}
 
-            if st.button("🔥 GENERAR"):
+            if st.button("🔥 INICIAR GENERACIÓN"):
                 p_bar = st.progress(0); s_text = st.empty()
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                     for i, idx in enumerate(sel_idx):
                         f = st.session_state.raw_records[idx]['fields']
-                        suc_actual = str(f.get('Sucursal', 'Doc'))
+                        suc_actual = str(f.get('Sucursal', 'Sucursal'))
                         p_bar.progress(i / len(sel_idx))
                         
-                        f_tipo = str(f.get('Tipo', '')).strip()
+                        f_fecha = f.get('Fecha', '2025-01-01')
+                        dt = datetime.strptime(f_fecha, '%Y-%m-%d')
+                        f_suc, f_muni, f_tipo = [str(f.get(k, '')).strip() for k in ['Sucursal', 'Municipio', 'Tipo']]
+                        f_punto, f_ruta = [str(f.get(k, '')).strip() for k in ['Punto de reunion', 'Ruta a seguir']]
+                        
+                        lugar_corto = min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else ""
+
                         reemplazos = {
                             "<<Tipo>>": proper_elegante(f_tipo),
-                            # ... (resto de campos igual)
+                            "<<Confechor>>": formatear_confechor_lineal(f_fecha, f.get('Hora', '')),
+                            "<<Consuc>>": proper_elegante(f"Sucursal {f_suc}, {f_muni}"),
+                            "<<Concat>>": proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}"),
+                            "<<Sucursal>>": proper_elegante(f_suc),
+                            "<<Seccion>>": str(f.get('Seccion', '')).upper()
                         }
 
-                        s_text.text(f"🖋️ Ajustando jerarquía de 'Tipo' para {suc_actual}...")
+                        s_text.text(f"🖋️ Procesando {suc_actual}...")
                         prs = Presentation(os.path.join(folder_fisica, map_memoria[f_tipo]))
-                        
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
                                     txt_shape = shape.text_frame.text
-                                    if "<<Tipo>>" in txt_shape:
-                                        # LÓGICA DE REDUCCIÓN DINÁMICA
-                                        nuevo_texto = proper_elegante(f_tipo)
-                                        tf = shape.text_frame
-                                        tf.clear()
-                                        tf.word_wrap = True
-                                        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                        
-                                        p = tf.paragraphs[0]
+                                    tag_encontrado = next((tag for tag in reemplazos if tag in txt_shape), None)
+                                    
+                                    if tag_encontrado:
+                                        nuevo_texto = reemplazos[tag_encontrado]
+                                        shape.text_frame.clear() 
+                                        p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
+                                        shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                                        shape.text_frame.word_wrap = True
                                         
                                         run = p.add_run()
                                         run.text = nuevo_texto
                                         run.font.color.rgb = AZUL_CELESTE
                                         run.font.bold = True
                                         
-                                        # Empezamos en 64pt y bajamos hasta que LibreOffice lo acomode
-                                        # Nota: Dado que soffice maneja el wrap al convertir, 
-                                        # establecemos el objetivo visual de 64pt.
-                                        run.font.size = Pt(64) 
-                                        
-                                        # Si el texto es muy corto para romper a 2 líneas en 64pt,
-                                        # se puede forzar un tamaño aún mayor o dejar que ocupe el ancho.
-                                        # Pero siguiendo tu instrucción, partimos de 64pt.
+                                        # LÓGICA DE TAMAÑOS
+                                        if tag_encontrado == "<<Tipo>>":
+                                            run.font.size = Pt(64) # SIEMPRE 64pt para reducir a 2 líneas
+                                        elif tag_encontrado == "<<Confechor>>":
+                                            run.font.size = Pt(36)
+                                        elif tag_encontrado == "<<Sucursal>>":
+                                            run.font.size = Pt(36)
+                                        else: 
+                                            run.font.size = Pt(46)
 
-                        # (Manejo de PDF y ZIP se mantiene igual)
+                        # Guardado con Nomenclatura Corregida
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
-                        # ... lógica de guardado ...
+                        if pdf_data:
+                            mes_mm = str(dt.month).zfill(2) # Nomenclatura mm
+                            f_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}")
+                            nom_file = f"{f_nom} - {proper_elegante(lugar_corto)}, {proper_elegante(f_muni)} - {proper_elegante(f_tipo)}, {proper_elegante(f_suc)}"
+                            ext = ".pdf" if modo == "Reportes" else ".jpg"
+                            
+                            # RUTA: Año / MM / Modo / Sucursal
+                            ruta_zip = f"Provident/{dt.year}/{mes_mm}/{modo}/{proper_elegante(f_suc)}/{nom_file[:140] + ext}"
+                            
+                            if modo == "Reportes":
+                                zip_f.writestr(ruta_zip, pdf_data)
+                            else:
+                                imgs = convert_from_bytes(pdf_data)
+                                if imgs:
+                                    img_io = BytesIO(); imgs[0].save(img_io, format='JPEG', quality=90)
+                                    zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                st.success("✅ ¡Generación finalizada!")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Tipo_64.zip")
+                p_bar.progress(1.0); s_text.text("✅ Proceso finalizado.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_v3.zip")
