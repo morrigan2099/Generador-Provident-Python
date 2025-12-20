@@ -18,7 +18,12 @@ CONFIG_FILE = "config_app.json"
 def cargar_config():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r") as f: return json.load(f)
+            with open(CONFIG_FILE, "r") as f: 
+                cfg = json.load(f)
+                # Asegurar que las llaves existan
+                if "plantillas" not in cfg: cfg["plantillas"] = {}
+                if "columnas_visibles" not in cfg: cfg["columnas_visibles"] = []
+                return cfg
         except: pass
     return {"plantillas": {}, "columnas_visibles": []}
 
@@ -65,8 +70,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v8", layout="wide")
-st.title("🚀 Generador Pro: Columnas Completas y Comas Corregidas")
+st.set_page_config(page_title="Provident Pro v9", layout="wide")
+st.title("🚀 Generador Pro: Fix Multiselect & Nomenclatura")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -85,27 +90,43 @@ with st.sidebar:
                 st.rerun()
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    # ESCANEAR TODOS LOS REGISTROS para no perder ninguna columna
+    # ESCANEAR TODOS LOS REGISTROS para obtener todas las columnas reales
     columnas_detectadas = set()
     for r in st.session_state.raw_records:
         columnas_detectadas.update(r['fields'].keys())
     
+    # Ordenar alfabéticamente para consistencia
     all_keys = sorted(list(columnas_detectadas))
     
+    # Filtrar hasta antes de "Foto de equipo"
     try:
         idx_end = all_keys.index("Foto de equipo")
         cols_utiles = all_keys[:idx_end]
-    except: cols_utiles = all_keys
+    except: 
+        cols_utiles = all_keys
 
     df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    cols_to_show = st.multiselect("Visualizar campos:", cols_utiles, default=config.get("columnas_visibles", [c for c in cols_utiles if c in df.columns]))
+    
+    # --- FIX PARA EL ERROR DE MULTISELECT ---
+    # Solo permitimos como default las columnas que SI existen en la carga actual
+    saved_cols = config.get("columnas_visibles", [])
+    valid_defaults = [c for c in saved_cols if c in cols_utiles]
+    
+    # Si no hay nada guardado o nada válido, mostramos todas las útiles por defecto
+    if not valid_defaults:
+        valid_defaults = cols_utiles
+
+    cols_to_show = st.multiselect("Visualizar campos:", cols_utiles, default=valid_defaults)
     
     if cols_to_show != config["columnas_visibles"]:
         config["columnas_visibles"] = cols_to_show
         guardar_config(config)
 
-    df_display = df[cols_to_show].copy()
+    # Filtrar el DF con lo seleccionado, asegurando que existan en el DF
+    cols_existentes = [c for c in cols_to_show if c in df.columns]
+    df_display = df[cols_existentes].copy()
     df_display.insert(0, "Seleccionar", False)
+    
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
@@ -117,7 +138,9 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
         tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
         for t in tipos_sel:
             default_p = config["plantillas"].get(t, archivos_pptx[0] if archivos_pptx else "")
-            nueva_p = st.selectbox(f"Plantilla para {t}:", archivos_pptx, index=archivos_pptx.index(default_p) if default_p in archivos_pptx else 0, key=f"p_{t}")
+            nueva_p = st.selectbox(f"Plantilla para {t}:", archivos_pptx, 
+                                 index=archivos_pptx.index(default_p) if default_p in archivos_pptx else 0, 
+                                 key=f"p_{t}")
             if nueva_p != config["plantillas"].get(t):
                 config["plantillas"][t] = nueva_p
                 guardar_config(config)
@@ -131,20 +154,24 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     p_bar.progress(i / len(sel_idx))
                     
                     dt = datetime.strptime(record.get('Fecha', '2025-01-01'), '%Y-%m-%d')
-                    f_suc, f_muni, f_tipo = [proper_elegante(record.get(k, '')) for k in ['Sucursal', 'Municipio', 'Tipo']]
+                    f_suc = proper_elegante(record.get('Sucursal', ''))
+                    f_muni = proper_elegante(record.get('Municipio', ''))
+                    f_tipo = proper_elegante(record.get('Tipo', ''))
                     
-                    # LÓGICA DE UBICACIÓN SIN COMAS DUPLICADAS
                     f_punto = str(record.get('Punto de reunion', '')).strip()
                     f_ruta = str(record.get('Ruta a seguir', '')).strip()
+                    
+                    # Lugar corto para el nombre del archivo
                     lugar_val = f_punto if f_punto else f_ruta
                     lugar_corto = proper_elegante(lugar_val)
 
                     hora_f = interpretar_hora(record.get('Hora', ''))
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
                     
-                    # Concat: Lugar (punto o ruta) + Municipio (un solo separador)
-                    componentes_concat = [o for o in [f_punto, f_ruta, f_muni] if o and str(o).strip()]
-                    concat_val = ", ".join(componentes_concat)
+                    # Concat: Lugar + Municipio (Corregido para evitar comas dobles)
+                    # Filtramos elementos vacíos antes de unir con ", "
+                    partes_concat = [p for p in [lugar_val, f_muni] if p]
+                    concat_val = ", ".join(partes_concat)
 
                     reemplazos = {
                         "<<Tipo>>": f_tipo, 
@@ -154,7 +181,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         "<<Concat>>": proper_elegante(concat_val)
                     }
                     
-                    prs = Presentation(os.path.join(folder_fisica, config["plantillas"][record.get('Tipo', 'Tipo')]))
+                    prs = Presentation(os.path.join(folder_fisica, config["plantillas"].get(record.get('Tipo'), archivos_pptx[0])))
                     for slide in prs.slides:
                         for shape in slide.shapes:
                             if shape.has_text_frame:
@@ -165,7 +192,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
                                         
-                                        # SIEMPRE 64pt para Tipo (reduciendo a 2 líneas)
+                                        # LÓGICA DE TAMAÑO: Tipo a 64pt
                                         run.font.size = Pt(64) if tag == "<<Tipo>>" else Pt(36)
                                         shape.text_frame.word_wrap = True
 
@@ -174,12 +201,14 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         for tf in tags_foto:
                             adj = record.get(tf)
                             if adj and isinstance(adj, list):
-                                r_img = requests.get(adj[0].get('url'))
-                                if r_img.status_code == 200:
-                                    for slide in prs.slides:
-                                        for shape in slide.shapes:
-                                            if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
-                                                slide.shapes.add_picture(BytesIO(r_img.content), shape.left, shape.top, shape.width, shape.height)
+                                try:
+                                    r_img = requests.get(adj[0].get('url'))
+                                    if r_img.status_code == 200:
+                                        for slide in prs.slides:
+                                            for shape in slide.shapes:
+                                                if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
+                                                    slide.shapes.add_picture(BytesIO(r_img.content), shape.left, shape.top, shape.width, shape.height)
+                                except: pass
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     pdf_data = generar_pdf(pp_io.getvalue())
@@ -189,9 +218,10 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         nom_file = f"{f_str} - {f_tipo}, {f_suc} - {lugar_corto}, {f_muni}"
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         
+                        # Carpeta mm - mmmm
                         mes_folder = f"{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}"
-                        ruta = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:140]}{ext}"
+                        ruta = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:135]}{ext}"
                         zip_f.writestr(ruta, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-            st.success("✅ ¡Generación exitosa! Columnas y comas corregidas.")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v8.zip")
+            st.success("✅ Generación exitosa.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Fix.zip")
