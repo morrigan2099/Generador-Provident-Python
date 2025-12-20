@@ -18,9 +18,6 @@ MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
             "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-if 'raw_records' not in st.session_state: st.session_state.raw_records = []
-if 'map_memoria' not in st.session_state: st.session_state.map_memoria = {}
-
 def proper_elegante(texto):
     if not texto or str(texto).lower() == "none": return ""
     texto = str(texto).strip().lower()
@@ -75,9 +72,11 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- UI ---
+# --- UI STREAMLIT ---
 st.set_page_config(page_title="Provident Pro Final Fix", layout="wide")
-st.title("🚀 Generador Pro: Centrado Vertical y Auto-Ajuste")
+st.title("🚀 Generador Pro: Fix Centrado de Líneas")
+
+if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -108,8 +107,9 @@ if st.session_state.raw_records:
         if os.path.exists(folder_fisica):
             archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
             tipos_unicos = df_edit.loc[sel_idx, "Tipo"].unique()
+            map_memoria = {}
             for t in tipos_unicos:
-                st.session_state.map_memoria[t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, key=f"p_{t}")
+                map_memoria[t] = st.selectbox(f"Plantilla para {t}:", archivos_pptx, key=f"p_{t}")
 
             if st.button("🔥 GENERAR"):
                 progress_bar = st.progress(0)
@@ -122,7 +122,7 @@ if st.session_state.raw_records:
                         f = st.session_state.raw_records[idx]['fields']
                         suc_n = str(f.get('Sucursal', 'Sucursal'))
                         
-                        status_text.text(f"⏳ Procesando {suc_n} ({i+1}/{total}) - Aplicando textos...")
+                        status_text.text(f"⏳ Procesando {suc_n} ({i+1}/{total})...")
                         progress_bar.progress(i / total)
 
                         f_fecha = f.get('Fecha', '2025-01-01')
@@ -146,40 +146,44 @@ if st.session_state.raw_records:
                             "<<Seccion>>": f_seccion 
                         }
 
-                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[f_tipo]))
+                        prs = Presentation(os.path.join(folder_fisica, map_memoria[f_tipo]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    tf = shape.text_frame
-                                    tf.vertical_anchor = MSO_ANCHOR.MIDDLE # Centrado Vertical
-                                    tf.word_wrap = True # Asegura que use el ancho del cuadro
-                                    tf.margin_top = 0 # Elimina aire extra
+                                    # Verificamos si algún tag está en el texto completo del cuadro
+                                    txt_completo = shape.text_frame.text
+                                    encontrado = any(tag in txt_completo for tag in reemplazos)
                                     
-                                    for paragraph in tf.paragraphs:
-                                        paragraph.alignment = PP_ALIGN.CENTER # Centrado Horizontal
+                                    if encontrado:
+                                        # 1. Guardar el nuevo valor y determinar tamaño
+                                        tag_detectado = next(tag for tag in reemplazos if tag in txt_completo)
+                                        nuevo_valor = txt_completo.replace(tag_detectado, reemplazos[tag_detectado])
                                         
-                                        full_text = "".join(run.text for run in paragraph.runs)
-                                        for tag, val in reemplazos.items():
-                                            if tag in full_text:
-                                                new_val = full_text.replace(tag, val)
-                                                for r in paragraph.runs: r.text = ""
-                                                run = paragraph.add_run() if not paragraph.runs else paragraph.runs[0]
-                                                run.text = new_val
-                                                run.font.color.rgb = AZUL_CELESTE
-                                                run.font.bold = True
-                                                
-                                                # AJUSTE DE TAMAÑO MÁXIMO
-                                                if tag == "<<Confechor>>": run.font.size = Pt(32)
-                                                elif tag == "<<Sucursal>>": run.font.size = Pt(36) # 2 puntos menos
-                                                elif tag == "<<Seccion>>": run.font.size = Pt(38)
-                                                else: run.font.size = Pt(46) # Empezamos en 46 para Tipo y Concat
+                                        # 2. LIMPIEZA TOTAL del cuadro para asegurar centrado
+                                        shape.text_frame.clear() 
+                                        p = shape.text_frame.paragraphs[0]
+                                        p.alignment = PP_ALIGN.CENTER # Centrado Horizontal estricto
+                                        shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE # Centrado Vertical
+                                        
+                                        # 3. Insertar texto con formato
+                                        run = p.add_run()
+                                        run.text = nuevo_valor
+                                        run.font.color.rgb = AZUL_CELESTE
+                                        run.font.bold = True
+                                        
+                                        # ASIGNACIÓN DE TAMAÑOS
+                                        if tag_detectado == "<<Confechor>>": run.font.size = Pt(32)
+                                        elif tag_detectado == "<<Tipo>>": run.font.size = Pt(32) # IGUAL A CONFECHOR
+                                        elif tag_detectado == "<<Sucursal>>": run.font.size = Pt(36)
+                                        elif tag_detectado == "<<Seccion>>": run.font.size = Pt(38)
+                                        else: run.font.size = Pt(46)
 
+                        # Manejo de fotos... (se mantiene igual)
                         if modo == "Reportes":
                             tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_f:
                                 adj = f.get(tf)
                                 if adj and isinstance(adj, list):
-                                    status_text.text(f"📸 Descargando {tf} para {suc_n}...")
                                     r_img = requests.get(adj[0].get('url'))
                                     if r_img.status_code == 200:
                                         for slide in prs.slides:
@@ -187,7 +191,6 @@ if st.session_state.raw_records:
                                                 if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
                                                     slide.shapes.add_picture(BytesIO(r_img.content), shape.left, shape.top, shape.width, shape.height)
 
-                        status_text.text(f"⚙️ Finalizando formato de {suc_n}...")
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
@@ -203,15 +206,8 @@ if st.session_state.raw_records:
                             nom_file = nom_file[:140] + ext
                             
                             ruta_zip = f"Provident/{dt.year}/{dt.month:02d}/{modo}/{s_nom}/{nom_file}"
-                            
-                            if modo == "Reportes":
-                                zip_f.writestr(ruta_zip, pdf_data)
-                            else:
-                                imgs = convert_from_bytes(pdf_data)
-                                if imgs:
-                                    img_io = BytesIO(); imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
-                                    zip_f.writestr(ruta_zip, img_io.getvalue())
-                
+                            zip_f.writestr(ruta_zip, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
+
                 progress_bar.progress(1.0)
-                status_text.text("✅ Proceso terminado exitosamente.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Final.zip")
+                st.success("✅ Generación finalizada. Centrado corregido y tamaños equilibrados.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Fixed.zip")
