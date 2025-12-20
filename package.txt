@@ -1,0 +1,2 @@
+libreoffice
+libgl1-mesa-glx
