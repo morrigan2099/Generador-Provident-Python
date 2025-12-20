@@ -59,7 +59,7 @@ def generar_pdf(pptx_bytes):
 
 # --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Escalado Dinámico (Max 34pt)")
+st.title("🚀 Generador Pro: Tamaño Máximo 42pt")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -77,6 +77,7 @@ with st.sidebar:
                 st.rerun()
 
 if st.session_state.raw_records:
+    # Tabla visual estilizada
     data_list = [{"Tipo": proper_elegante(r['fields'].get("Tipo")), "Sucursal": proper_elegante(r['fields'].get("Sucursal")), "Municipio": proper_elegante(r['fields'].get("Municipio")), "Fecha": r['fields'].get("Fecha", "")} for r in st.session_state.raw_records]
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
@@ -130,7 +131,7 @@ if st.session_state.raw_records:
                             "<<Sucursal>>": proper_elegante(rec.get('Sucursal'))
                         }
 
-                        # 2. PROCESAMIENTO PPTX CON LÓGICA DE ESCALADO DINÁMICO
+                        # 2. PROCESAMIENTO PPTX CON ESCALADO DESDE 42PT
                         t_key = proper_elegante(rec.get('Tipo'))
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[t_key]))
                         for slide in prs.slides:
@@ -143,21 +144,22 @@ if st.session_state.raw_records:
                                                 new_txt = full_txt.replace(tag, val)
                                                 long = len(new_txt)
                                                 
-                                                # --- NUEVA LÓGICA DE ESCALADO ---
+                                                # --- LÓGICA DE ESCALADO DINÁMICO ---
                                                 if tag == "<<Conhora>>":
-                                                    size = 32 # Hora fija grande
+                                                    size = 42 # Hora siempre máxima
                                                 else:
-                                                    # Empezamos en 34 y bajamos según la longitud
-                                                    if long < 20: size = 34
-                                                    elif long < 40: size = 26
-                                                    elif long < 60: size = 18
-                                                    elif long < 100: size = 14
-                                                    else: size = 10 # Mínimo para textos muy largos (Concat)
+                                                    # Comienza en 42 y baja agresivamente para que quepa
+                                                    if long < 15: size = 42
+                                                    elif long < 30: size = 32
+                                                    elif long < 50: size = 22
+                                                    elif long < 80: size = 16
+                                                    elif long < 120: size = 12
+                                                    else: size = 9 # Para textos extremadamente largos en Concat
 
                                                 run = paragraph.runs[0]
                                                 run.text = new_txt
                                                 run.font.size = Pt(size)
-                                                # Limpiar runs adicionales para no duplicar texto
+                                                # Limpiar runs adicionales
                                                 for r_idx in range(1, len(paragraph.runs)):
                                                     paragraph.runs[r_idx].text = ""
 
@@ -178,5 +180,5 @@ if st.session_state.raw_records:
                                     imgs[0].save(img_io, format='PNG')
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                status_text.success(f"✅ ¡{total} archivos generados!")
+                status_text.success(f"✅ ¡{total} archivos generados con éxito!")
                 st.download_button("📥 DESCARGAR RESULTADOS", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
