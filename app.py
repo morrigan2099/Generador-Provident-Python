@@ -10,9 +10,11 @@ from pdf2image import convert_from_bytes
 
 # --- CONFIGURACIÓN FIJA ---
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
+BASE_PLANTILLAS = "PLANTILLAS"
 
 # --- FUNCIONES DE APOYO ---
 def limpiar_adjuntos(valor):
+    """Extrae nombres de archivos si el campo es de tipo adjunto en Airtable"""
     if isinstance(valor, list):
         return ", ".join([f.get("filename", "") for f in valor])
     return str(valor) if valor else ""
@@ -29,7 +31,8 @@ def generar_pdf(pptx_bytes):
         pdf_path = tmp_path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f:
             pdf_data = f.read()
-        os.remove(tmp_path)
+        # Limpieza de archivos temporales
+        if os.path.exists(tmp_path): os.remove(tmp_path)
         if os.path.exists(pdf_path): os.remove(pdf_path)
         return pdf_data
     except Exception as e:
@@ -80,27 +83,24 @@ with st.sidebar:
             df = pd.DataFrame(raw_data)
             
             # Columnas a mostrar
-            cols_deseadas = ["Tipo", "Sucursal", "Seccion", "Municipio", "Fecha", "Hora"]
+            cols_deseadas = ["Tipo", "Sucursal", "Seccion", "Municipio", "Fecha"]
             cols_visibles = [c for c in cols_deseadas if c in df.columns]
             df_display = df[cols_visibles].copy()
             
-            # Limpiar datos para la tabla
             for col in df_display.columns:
                 df_display[col] = df_display[col].apply(limpiar_adjuntos)
             
-            # Insertar columna de selección
             if "Seleccionar" not in df_display.columns:
                 df_display.insert(0, "Seleccionar", False)
             
             st.session_state.df_trabajo = df_display
     else:
-        st.error("Error al conectar con Airtable. Verifica el Token.")
+        st.error("Error al conectar con Airtable.")
 
 # --- PANEL PRINCIPAL ---
 if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
     st.subheader("1. Selección de Registros")
     
-    # Botones de selección masiva
     c1, c2, _ = st.columns([1, 1, 4])
     if c1.button("✅ Todo"):
         st.session_state.df_trabajo["Seleccionar"] = True
@@ -109,7 +109,6 @@ if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
         st.session_state.df_trabajo["Seleccionar"] = False
         st.rerun()
 
-    # Tabla interactiva
     df_editado = st.data_editor(
         st.session_state.df_trabajo,
         use_container_width=True,
@@ -122,39 +121,44 @@ if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
 
     if not seleccionados.empty:
         st.divider()
-        st.subheader("2. Selección de Formato y Plantillas")
+        st.subheader("2. Selección de Uso y Plantillas")
         
-        # Selección de USO
-        uso_final = st.radio("Seleccione uso final:", ["Postal", "Reporte"], horizontal=True)
+        # Selección de USO (define la subcarpeta)
+        uso_final = st.radio("Seleccione uso final:", ["POSTALES", "REPORTES"], horizontal=True)
         
-        # Listar archivos PPTX del repositorio
-        archivos_repo = [f for f in os.listdir('.') if f.endswith('.pptx')]
+        # Definir ruta según el uso
+        ruta_subcarpeta = os.path.join(BASE_PLANTILLAS, uso_final)
         
-        if not archivos_repo:
-            st.error("⚠️ No se encontraron archivos .pptx en el repositorio.")
+        if os.path.exists(ruta_subcarpeta):
+            archivos_pptx = [f for f in os.listdir(ruta_subcarpeta) if f.endswith('.pptx')]
         else:
-            plantillas_map = {}
+            archivos_pptx = []
+            st.error(f"⚠️ No se encontró la carpeta: {ruta_subcarpeta}")
+
+        if archivos_pptx:
+            mapping_plantillas = {}
             tipos_unicos = seleccionados["Tipo"].unique()
             
-            # Cuadro de diálogo interactivo por cada TIPO
+            # Selector dinámico por cada Tipo detectado
             for t in tipos_unicos:
-                plantillas_map[t] = st.selectbox(
-                    f"Seleccione plantilla para {uso_final} de TIPO: {t}",
-                    options=archivos_repo,
-                    key=f"sel_{t}"
+                mapping_plantillas[t] = st.selectbox(
+                    f"Seleccione plantilla para {uso_final[:-2]} de TIPO: {t}",
+                    options=archivos_repo if 'archivos_repo' in locals() else archivos_pptx,
+                    key=f"sel_{uso_final}_{t}"
                 )
             
             st.divider()
-            if st.button(f"🔥 GENERAR {uso_final.upper()}S"):
+            if st.button(f"🔥 GENERAR {uso_final}"):
                 for idx, fila in seleccionados.iterrows():
                     with st.status(f"Procesando {fila['Sucursal']}...", expanded=False):
                         
-                        # Datos originales de Airtable
+                        # Datos originales de Airtable (campos completos)
                         datos_record = st.session_state.registros_raw[idx]['fields']
-                        archivo_pptx = plantillas_map[fila['Tipo']]
+                        archivo_nombre = mapping_plantillas[fila['Tipo']]
+                        path_completo = os.path.join(ruta_subcarpeta, archivo_nombre)
                         
-                        # Cargar plantilla y reemplazar
-                        prs = Presentation(archivo_pptx)
+                        # Carga y Reemplazo en PPTX
+                        prs = Presentation(path_completo)
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
@@ -165,20 +169,20 @@ if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
                                                 if tag in run.text:
                                                     run.text = run.text.replace(tag, limpiar_adjuntos(v))
                         
-                        # Guardar PPTX temporalmente en memoria
+                        # Guardar a binario
                         pptx_io = BytesIO()
                         prs.save(pptx_io)
                         
-                        # Convertir a PDF (Base para ambos usos)
+                        # Generar PDF (Base común)
                         pdf_data = generar_pdf(pptx_io.getvalue())
                         
                         if pdf_data:
-                            if uso_final == "Reporte":
+                            if uso_final == "REPORTES":
                                 st.download_button(
                                     label=f"📥 PDF - {fila['Sucursal']}",
                                     data=pdf_data,
                                     file_name=f"Reporte_{fila['Sucursal']}.pdf",
-                                    key=f"dl_pdf_{idx}"
+                                    key=f"pdf_{idx}"
                                 )
                             else:
                                 png_data = generar_png(pdf_data)
@@ -187,7 +191,9 @@ if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
                                         label=f"📥 PNG - {fila['Sucursal']}",
                                         data=png_data,
                                         file_name=f"Postal_{fila['Sucursal']}.png",
-                                        key=f"dl_png_{idx}"
+                                        key=f"png_{idx}"
                                     )
+        else:
+            st.warning(f"Sube archivos .pptx a la carpeta {ruta_subcarpeta} en GitHub.")
 else:
-    st.info("Esperando conexión con Airtable para mostrar registros...")
+    st.info("Cargando datos de Airtable...")
