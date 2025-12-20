@@ -1,133 +1,139 @@
 import streamlit as st
 import requests
+import pandas as pd
 from pptx import Presentation
-import os
-import subprocess
-import tempfile
 from io import BytesIO
 import cloudinary
 import cloudinary.uploader
-import pandas as pd
+import os
+import tempfile
+import subprocess
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Generador Provident Pro", layout="wide")
-
+# --- CONFIGURACIÓN DE ESTADO (La memoria de la App) ---
+if 'bases' not in st.session_state:
+    st.session_state.bases = []
+if 'tablas' not in st.session_state:
+    st.session_state.tablas = []
 if 'registros' not in st.session_state:
     st.session_state.registros = []
 if 'record_map' not in st.session_state:
     st.session_state.record_map = {}
 
-# --- FUNCIONES DE PROCESAMIENTO (Tu lógica original adaptada) ---
+# --- FUNCIONES DE CONEXIÓN ---
+def fetch_bases(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    url = "https://api.airtable.com/v0/meta/bases"
+    r = requests.get(url, headers=headers)
+    return r.json().get("bases", []) if r.status_code == 200 else []
 
-def reemplazar_texto(slide, reemplazos):
-    """Recorre formas y tablas para reemplazar etiquetas {{Campo}}"""
-    for shape in slide.shapes:
-        if shape.has_text_frame:
-            for paragraph in shape.text_frame.paragraphs:
-                for run in paragraph.runs:
-                    for tag, valor in reemplazos.items():
-                        if tag in run.text:
-                            run.text = run.text.replace(tag, str(valor if valor else ""))
-        
-        if shape.has_table:
-            for row in shape.table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            for tag, valor in reemplazos.items():
-                                if tag in run.text:
-                                    run.text = run.text.replace(tag, str(valor if valor else ""))
+def fetch_tablas(token, base_id):
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://api.airtable.com/v0/meta/bases/{base_id}/tables"
+    r = requests.get(url, headers=headers)
+    return r.json().get("tables", []) if r.status_code == 200 else []
 
-def convertir_a_pdf(pptx_bytes):
-    """Usa LibreOffice en el servidor para convertir"""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp_pptx:
-        tmp_pptx.write(pptx_bytes)
-        tmp_pptx_path = tmp_pptx.name
+def fetch_records(token, base_id, table_id):
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://api.airtable.com/v0/{base_id}/{table_id}"
+    r = requests.get(url, headers=headers)
+    return r.json().get("records", []) if r.status_code == 200 else []
+
+# --- LÓGICA DE PROCESAMIENTO ---
+def procesar_pptx(plantilla_bytes, fields):
+    prs = Presentation(BytesIO(plantilla_bytes))
+    # Reemplazo de texto simple {{Campo}}
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for paragraph in shape.text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        for key, value in fields.items():
+                            tag = f"{{{{{key}}}}}"
+                            if tag in run.text:
+                                run.text = run.text.replace(tag, str(value))
     
-    try:
-        # Comando para Streamlit Cloud (requiere packages.txt con 'libreoffice')
-        subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', 
-                        os.path.dirname(tmp_pptx_path), tmp_pptx_path], check=True)
-        pdf_path = tmp_pptx_path.replace(".pptx", ".pdf")
-        with open(pdf_path, "rb") as f:
-            return f.read()
-    except:
-        return None
+    output = BytesIO()
+    prs.save(output)
+    return output.getvalue()
 
 # --- INTERFAZ ---
-st.title("🚀 Generador de Presentaciones")
+st.set_page_config(page_title="Generador Provident", layout="wide")
+st.title("🚀 Generador Provident - Versión Web")
 
+# BARRA LATERAL
 with st.sidebar:
-    st.header("🔑 Conexión")
+    st.header("1. Conexión Airtable")
     token = st.text_input("Airtable Token", type="password")
     
-    if token:
-        # Lógica de carga de bases/tablas (simplificada para el ejemplo)
-        # Aquí puedes mantener tu lógica de selectores del mensaje anterior
-        base_id = st.text_input("Base ID (appXXXXXXXX)")
-        table_name = st.text_input("Nombre de la Tabla")
+    # Botón para cargar bases
+    if st.button("Cargar Mis Bases"):
+        if token:
+            st.session_state.bases = fetch_bases(token)
+            if not st.session_state.bases:
+                st.error("No se encontraron bases. Revisa el Token.")
+        else:
+            st.warning("Ingresa un Token")
+
+    # Selector de Bases
+    if st.session_state.bases:
+        base_names = {b['name']: b['id'] for b in st.session_state.bases}
+        base_sel = st.selectbox("Selecciona Base", options=list(base_names.keys()))
         
-        if st.button("🔄 Cargar Datos de Airtable"):
-            url = f"https://api.airtable.com/v0/{base_id}/{table_name}"
-            headers = {"Authorization": f"Bearer {token}"}
-            res = requests.get(url, headers=headers)
-            if res.status_code == 200:
-                data = res.json().get("records", [])
-                st.session_state.registros = data
-                # Usamos el campo 'Nombre' o el ID como clave
-                st.session_state.record_map = {r['fields'].get('Nombre', r['id']): r for r in data}
-                st.success(f"Cargados {len(data)} registros")
+        if st.button("Ver Tablas"):
+            st.session_state.tablas = fetch_tablas(token, base_names[base_sel])
+            st.session_state.base_id_activa = base_names[base_sel]
 
-st.divider()
+    # Selector de Tablas
+    if st.session_state.tablas:
+        tabla_names = {t['name']: t['id'] for t in st.session_state.tablas}
+        tabla_sel = st.selectbox("Selecciona Tabla", options=list(tabla_names.keys()))
+        
+        if st.button("📥 CARGAR REGISTROS"):
+            with st.spinner("Leyendo datos..."):
+                regs = fetch_records(token, st.session_state.base_id_activa, tabla_names[tabla_sel])
+                st.session_state.registros = regs
+                # Mapeo por el campo 'Nombre' para el multiselect
+                st.session_state.record_map = {r['fields'].get('Nombre', r['id']): r for r in regs}
+                st.success(f"Cargados {len(regs)} registros.")
 
-# --- ÁREA DE TRABAJO ---
+# ÁREA CENTRAL
 if st.session_state.registros:
-    col_a, col_b = st.columns([1, 2])
+    st.subheader("Configuración de Generación")
     
-    with col_a:
-        st.subheader("1. Selección")
-        seleccionados = st.multiselect("Clientes a procesar:", options=list(st.session_state.record_map.keys()))
-        plantilla = st.file_uploader("2. Subir Plantilla PPTX", type="pptx")
-        
-        do_pdf = st.checkbox("Convertir también a PDF")
+    col1, col2 = st.columns(2)
+    with col1:
+        seleccionados = st.multiselect("Selecciona Clientes:", options=list(st.session_state.record_map.keys()))
+    with col2:
+        archivo_pptx = st.file_uploader("Sube tu plantilla (.pptx)", type="pptx")
 
-    with col_b:
-        st.subheader("3. Procesamiento")
-        if st.button("🔥 GENERAR TODO") and plantilla and seleccionados:
-            
-            # Leemos la plantilla una vez para tenerla en memoria
-            template_bytes = plantilla.read()
+    if seleccionados and archivo_pptx:
+        if st.button("🔥 GENERAR PRESENTACIONES"):
+            plantilla_bytes = archivo_pptx.read()
             
             for nombre in seleccionados:
-                with st.expander(f"Procesando: {nombre}", expanded=True):
-                    record = st.session_state.record_map[nombre]
-                    fields = record['fields']
+                with st.expander(f"Resultado: {nombre}", expanded=True):
+                    record_data = st.session_state.record_map[nombre]
                     
-                    # Crear una copia de la presentación en memoria
-                    prs = Presentation(BytesIO(template_bytes))
+                    # Generar PPTX
+                    pptx_res = procesar_pptx(plantilla_bytes, record_data['fields'])
                     
-                    # Preparar diccionario de reemplazos {{Campo}} -> Valor
-                    # Esto mapea automáticamente cualquier columna de Airtable
-                    reemplazos = {f"{{{{{k}}}}}" : v for k, v in fields.items()}
-                    
-                    for slide in prs.slides:
-                        reemplazar_texto(slide, reemplazos)
-                    
-                    # Guardar resultado
-                    output_pptx = BytesIO()
-                    prs.save(output_pptx)
-                    pptx_final = output_pptx.getvalue()
-                    
-                    # Botón de descarga PPTX
-                    st.download_button(f"📥 Descargar PPTX - {nombre}", pptx_final, f"{nombre}.pptx")
-                    
-                    if do_pdf:
-                        with st.spinner("Convirtiendo a PDF..."):
-                            pdf_final = convertir_a_pdf(pptx_final)
-                            if pdf_final:
-                                st.download_button(f"📄 Descargar PDF - {nombre}", pdf_final, f"{nombre}.pdf")
-                            else:
-                                st.error("No se pudo generar el PDF (LibreOffice no detectado)")
-
+                    st.write(f"✅ Presentación para {nombre} lista.")
+                    st.download_button(
+                        label=f"⬇️ Descargar PPTX - {nombre}",
+                        data=pptx_res,
+                        file_name=f"Presentacion_{nombre}.pptx",
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    )
 else:
-    st.info("Configura los datos en el panel izquierdo para ver los registros.")
+    st.info("👈 Comienza configurando tu Token y seleccionando Base/Tabla en el panel izquierdo.")
+
+# --- SECCIÓN CLOUDINARY (Opcional, configurada en sidebar) ---
+with st.sidebar:
+    st.divider()
+    st.header("2. Cloudinary (Opcional)")
+    c_name = st.text_input("Cloud Name")
+    c_key = st.text_input("API Key")
+    c_secret = st.text_input("API Secret", type="password")
+    if c_name and c_key and c_secret:
+        cloudinary.config(cloud_name=c_name, api_key=c_key, api_secret=c_secret)
+        st.caption("✅ Cloudinary conectado")
