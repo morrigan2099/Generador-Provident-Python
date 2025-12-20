@@ -71,8 +71,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v18", layout="wide")
-st.title("🚀 Generador Pro: Placeholders en 50pt")
+st.set_page_config(page_title="Provident Pro v19", layout="wide")
+st.title("🚀 Generador Pro: Flujo de Acción y Selección")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -88,70 +88,83 @@ with st.sidebar:
             if st.button("🔄 CARGAR DATOS"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 st.session_state.raw_records = r_reg.json().get("records", [])
-                st.session_state.config = cargar_config() # Recargar para asegurar vínculos
+                st.session_state.config = cargar_config()
                 st.rerun()
     
     st.divider()
-    st.header("📂 Gestión de Vínculos")
-    if st.button("💾 GUARDAR CAMBIOS EN JSON", use_container_width=True, type="primary"):
+    st.header("📂 Vínculos Guardados")
+    if st.button("💾 GUARDAR JSON", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
-        st.toast("Vínculos guardados exitosamente")
+        st.toast("Configuración guardada")
 
-    if st.session_state.config["plantillas"]:
-        for t_key, p_val in list(st.session_state.config["plantillas"].items()):
-            c1, c2 = st.columns([4, 1])
-            c1.caption(f"**{t_key}**")
-            if c2.button("🗑️", key=f"del_{t_key}"):
-                del st.session_state.config["plantillas"][t_key]
-                guardar_config_json(st.session_state.config)
-                st.rerun()
+    for t_key, p_val in list(st.session_state.config["plantillas"].items()):
+        c1, c2 = st.columns([4, 1])
+        c1.caption(f"**{t_key}**")
+        if c2.button("🗑️", key=f"del_{t_key}"):
+            del st.session_state.config["plantillas"][t_key]
+            guardar_config_json(st.session_state.config)
+            st.rerun()
+
+# --- CUERPO PRINCIPAL ---
+# 1. SELECCIONAR ACCIÓN PRIMERO
+modo = st.radio("1. Selecciona el formato de salida:", ["Postales", "Reportes"], horizontal=True)
+folder_fisica = os.path.join(BASE_DIR, modo.upper())
+archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    all_ordered_keys = []
+    # 2. TABLA DE REGISTROS
+    st.subheader("2. Selecciona los registros a generar")
+    all_keys = []
     for r in st.session_state.raw_records:
         for key in r['fields'].keys():
-            if key not in all_ordered_keys: all_ordered_keys.append(key)
+            if key not in all_keys: all_keys.append(key)
     
     df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
     saved_cols = st.session_state.config.get("columnas_visibles", [])
-    valid_defaults = [c for c in saved_cols if c in all_ordered_keys]
-    if not valid_defaults: valid_defaults = all_ordered_keys[:8]
-    cols_to_show = st.multiselect("Columnas visibles:", all_ordered_keys, default=valid_defaults)
+    valid_cols = [c for c in saved_cols if c in all_keys] or all_keys[:8]
+    
+    cols_to_show = st.multiselect("Columnas de la tabla:", all_keys, default=valid_cols)
     st.session_state.config["columnas_visibles"] = cols_to_show
 
-    cols_para_df = list(cols_to_show)
-    if "Tipo" not in cols_para_df: cols_para_df.append("Tipo")
-    df_display = df[[c for c in cols_para_df if c in df.columns]].copy()
-    df_display.insert(0, "Seleccionar", False)
-    
-    # Checkbox de selección masiva en título integrado
-    column_config_editor = {
-        "Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False),
-        "Tipo": None if "Tipo" not in cols_to_show else st.column_config.TextColumn("Tipo")
-    }
+    # Preparar DF con columna de selección
+    df_display = df[[c for c in cols_to_show if c in df.columns]].copy()
+    if "Tipo" not in df_display.columns:
+        df_display["Tipo"] = df["Tipo"] # Necesario para el vínculo aunque no se vea
 
-    df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True, column_config=column_config_editor)
+    df_display.insert(0, "Seleccionar", False)
+
+    # CONFIGURACIÓN DEL EDITOR (Incluye Checkbox Maestro en el título)
+    df_edit = st.data_editor(
+        df_display,
+        column_config={
+            "Seleccionar": st.column_config.CheckboxColumn(
+                "Seleccionar", 
+                help="Haz clic aquí para seleccionar todos", 
+                default=False,
+                required=True
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        modo = st.radio("Acción:", ["Postales", "Reportes"], horizontal=True)
-        folder_fisica = os.path.join(BASE_DIR, modo.upper())
-        archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
-        
-        tipos_seleccionados = df_edit.loc[sel_idx, "Tipo"].unique()
-        
-        st.subheader("🔗 Configuración de Plantillas")
+        # 3. VINCULACIÓN DE PLANTILLAS
+        st.subheader("3. Verifica las plantillas vinculadas")
+        tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
         c1, c2 = st.columns(2)
-        for i, t in enumerate(tipos_seleccionados):
+        for i, t in enumerate(tipos_sel):
             t_str = str(t)
             p_mem = st.session_state.config["plantillas"].get(t_str)
             with (c1 if i % 2 == 0 else c2):
                 idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
-                sel_p = st.selectbox(f"Tipo: {t_str}", archivos_pptx, index=idx_def, key=f"v_{t_str}")
+                sel_p = st.selectbox(f"Plantilla para {t_str}:", archivos_pptx, index=idx_def, key=f"sel_{t_str}")
                 st.session_state.config["plantillas"][t_str] = sel_p
 
-        if st.button("🔥 INICIAR GENERACIÓN", use_container_width=True, type="primary"):
+        # 4. BOTÓN DE GENERACIÓN
+        if st.button("🔥 GENERAR ARCHIVOS", use_container_width=True, type="primary"):
             p_bar = st.progress(0)
             status = st.empty()
             zip_buf = BytesIO()
@@ -191,7 +204,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # TODO EL TEXTO A 50PT SEGÚN INSTRUCCIÓN
+                                        # TODOS LOS PLACEHOLDERS A 50PT
                                         run.font.size = Pt(50)
                                         shape.text_frame.word_wrap = True
 
@@ -221,5 +234,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status.success(f"✅ ¡Completado! {total} archivos procesados.")
+            status.success(f"✅ ¡Proceso terminado! {total} archivos listos.")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
