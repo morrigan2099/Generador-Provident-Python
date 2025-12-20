@@ -62,7 +62,7 @@ def generar_pdf(pptx_bytes):
 
 # --- UI ---
 st.set_page_config(page_title="Provident Pro v21", layout="wide")
-st.title("🚀 Generador Pro: Fuente 50pt Real (Sin AutoFit)")
+st.title("🚀 Generador Pro: Fuente 38pt Real (Sin AutoFit)")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -179,7 +179,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 50pt
+                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 38pt
                                         text_frame = shape.text_frame
                                         text_frame.auto_size = None # Elimina ajuste automático
                                         text_frame.clear()
@@ -190,7 +190,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         run.text = val
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(50) # FORZADO A 50PT
+                                        run.font.size = Pt(38) # FORZADO A 38PT
 
                     if modo == "Reportes":
                         tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
@@ -218,5 +218,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status.success(f"✅ ¡Completado! {total} archivos procesados con fuente 50pt.")
+            status.success(f"✅ ¡Completado! {total} archivos procesados con fuente 38pt.")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
