@@ -29,30 +29,16 @@ def proper_elegante(texto):
         else: resultado.append(p.capitalize())
     return " ".join(resultado)
 
-def formatear_hora_mx(hora_raw):
-    """Procesa la hora que viene como texto desde Airtable"""
-    if not hora_raw: return ""
+def formatear_confechor(fecha_str, hora_texto):
     try:
-        # Intenta parsear si viene en formato HH:mm (24h)
-        t_str = str(hora_raw).strip()
-        if ":" in t_str:
-            t = datetime.strptime(t_str, "%H:%M")
-            return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
-        return t_str.lower() # Si ya viene formateada, solo la devuelve
-    except:
-        return str(hora_raw).lower()
-
-def formatear_confechor(fecha_str, hora_raw):
-    """Formato: dd de mmmm (salto) de aaaa, hora"""
-    try:
-        # Airtable format: 2025-11-18
+        # Airtable: 2025-11-18
         dt = datetime.strptime(str(fecha_str).strip(), '%Y-%m-%d')
-        hora = formatear_hora_mx(hora_raw)
-        linea1 = f"{dt.day:02d} de {MESES_ES[dt.month-1]}"
-        linea2 = f"de {dt.year}, {hora}"
-        return f"{linea1}\n{linea2}"
-    except Exception as e:
-        return f"{fecha_str} {hora_raw}"
+        # Línea 1: dd de Mes | Línea 2: de aaaa, hora
+        l1 = f"{dt.day:02d} de {MESES_ES[dt.month-1]}"
+        l2 = f"de {dt.year}, {str(hora_texto).lower()}"
+        return f"{l1}\n{l2}"
+    except:
+        return f"{fecha_str}\n{hora_texto}"
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
@@ -73,9 +59,9 @@ def descargar_imagen(url):
         if r.status_code == 200: return BytesIO(r.content)
     except: return None
 
-# --- UI STREAMLIT ---
+# --- APP ---
 st.set_page_config(page_title="Provident Pro Final", layout="wide")
-st.title("🚀 Generador de Reportes y Postales")
+st.title("🚀 Generador Pro: Estructura y Formatos Restaurados")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -88,7 +74,7 @@ with st.sidebar:
             if r_tab.status_code == 200:
                 tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
                 tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
-                if st.button("🔄 CARGAR DATOS"):
+                if st.button("🔄 Cargar Datos"):
                     r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                     st.session_state.raw_records = r_reg.json().get("records", [])
                     st.rerun()
@@ -109,64 +95,81 @@ if st.session_state.raw_records:
             for t in tipos_unicos:
                 st.session_state.map_memoria[t] = st.selectbox(f"Plantilla para {t}:", archivos_pptx, key=f"p_{t}")
 
-            if st.button("🔥 GENERAR"):
+            if st.button("🔥 GENERAR TODO"):
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                     for idx in sel_idx:
-                        f = st.session_state.raw_records[idx]['fields']
+                        fields = st.session_state.raw_records[idx]['fields']
                         
-                        # Definición de reemplazos
+                        # 1. VALORES PARA NOMENCLATURA Y REEMPLAZO
+                        f_fecha = fields.get('Fecha', '2025-01-01')
+                        dt_obj = datetime.strptime(f_fecha, '%Y-%m-%d')
+                        f_suc = str(fields.get('Sucursal', '')).strip()
+                        f_muni = str(fields.get('Municipio', '')).strip()
+                        f_punto = str(fields.get('Punto de reunion', '')).strip()
+                        f_ruta = str(fields.get('Ruta a seguir', '')).strip()
+                        f_tipo = str(fields.get('Tipo', '')).upper()
+
+                        # Nomenclatura específica
+                        partes_nom = [p for p in [f_punto, f_ruta] if p]
+                        if f_muni: partes_nom.append(f_muni)
+                        str_nom = ", ".join(partes_nom)
+                        nombre_archivo = f"{f_fecha} - {f_tipo} {f_suc.upper()} - {str_nom}"
+                        
+                        # 2. DICCIONARIO DE REEMPLAZOS
                         reemplazos = {
-                            "<<Tipo>>": str(f.get('Tipo', '')).upper(),
-                            "<<confechor>>": formatear_confechor(f.get('Fecha'), f.get('Hora')),
-                            "<<Consuc>>": proper_elegante(f"Sucursal {f.get('Sucursal', '')}, {f.get('Municipio', '')}"),
-                            "<<Concat>>": proper_elegante(f"{f.get('Punto de reunion', '')}, {f.get('Ruta a seguir', '')}, {f.get('Municipio', '')}"),
-                            "<<Sucursal>>": proper_elegante(f.get('Sucursal', ''))
+                            "<<Tipo>>": f_tipo,
+                            "<<confechor>>": formatear_confechor(f_fecha, fields.get('Hora', '')),
+                            "<<Consuc>>": proper_elegante(f"Sucursal {f_suc}, {f_muni}"),
+                            "<<Concat>>": proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}"),
+                            "<<Sucursal>>": proper_elegante(f_suc)
                         }
 
-                        # Procesar PPTX
-                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[f.get('Tipo')]))
+                        # 3. PROCESAR POWERPOINT
+                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[fields.get('Tipo')]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
-                                # Reemplazo de Texto
                                 if shape.has_text_frame:
                                     for paragraph in shape.text_frame.paragraphs:
-                                        full_p_text = "".join(run.text for run in paragraph.runs)
+                                        full_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
-                                            if tag in full_p_text:
-                                                full_p_text = full_p_text.replace(tag, val)
+                                            if tag in full_text:
+                                                new_val = full_text.replace(tag, val)
                                                 for r in paragraph.runs: r.text = ""
                                                 if paragraph.runs:
-                                                    paragraph.runs[0].text = full_p_text
-                                                    paragraph.runs[0].font.size = Pt(32) if "\n" in val else Pt(42)
+                                                    run = paragraph.runs[0]
+                                                    run.text = new_val
+                                                    run.font.size = Pt(32) if "\n" in val else Pt(42)
 
-                                # Reemplazo de Fotos (sólo en Reportes)
                                 if modo == "Reportes":
-                                    tags_fotos = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", 
-                                                  "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
-                                    for tf in tags_fotos:
+                                    tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
+                                    for tf in tags_f:
                                         if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
-                                            adj = f.get(tf)
+                                            adj = fields.get(tf)
                                             if adj and isinstance(adj, list):
                                                 img_data = descargar_imagen(adj[0].get('url'))
                                                 if img_data:
                                                     slide.shapes.add_picture(img_data, shape.left, shape.top, shape.width, shape.height)
 
-                        # Guardar y Convertir
+                        # 4. EXPORTACIÓN Y ESTRUCTURA DE CARPETAS
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            dt_obj = datetime.strptime(str(f.get('Fecha', '2025-01-01')), '%Y-%m-%d')
-                            nombre_base = proper_elegante(f"{f.get('Fecha')} {f.get('Tipo')} {f.get('Sucursal')}")
+                            ext = ".jpg" if modo == "Postales" else ".pdf"
+                            nom_final = proper_elegante(nombre_archivo) + ext
+                            folder_mes = f"{dt_obj.month:02d} - {MESES_ES[dt_obj.month-1]}"
+                            
+                            # RUTA: Provident / Año / Mes / Modo / Sucursal / Archivo
+                            ruta_en_zip = f"Provident/{dt_obj.year}/{folder_mes}/{modo}/{proper_elegante(f_suc)}/{nom_final}"
                             
                             if modo == "Reportes":
-                                zip_f.writestr(f"{nombre_base}.pdf", pdf_data)
+                                zip_f.writestr(ruta_en_zip, pdf_data)
                             else:
                                 imgs = convert_from_bytes(pdf_data)
                                 if imgs:
                                     img_io = BytesIO()
                                     imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
-                                    zip_f.writestr(f"{nombre_base}.jpg", img_io.getvalue())
+                                    zip_f.writestr(ruta_en_zip, img_io.getvalue())
 
-                st.success("✅ Proceso terminado")
-                st.download_button("📥 Descargar ZIP", zip_buf.getvalue(), "Provident_Resultados.zip")
+                st.success("✅ Estructura de directorios y formatos generados correctamente.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Completo.zip")
