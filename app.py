@@ -6,7 +6,7 @@ import os
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_VERTICAL_ANCHOR
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
@@ -48,11 +48,6 @@ def proper_elegante(texto):
     resultado = [p.capitalize() if i == 0 or p not in excepciones else p for i, p in enumerate(palabras)]
     return " ".join(resultado)
 
-def interpretar_hora(hora_txt):
-    """Retorna la hora tal cual viene de Airtable (sin proper)"""
-    if not hora_txt: return ""
-    return str(hora_txt).strip()
-
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
@@ -66,8 +61,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v20", layout="wide")
-st.title("🚀 Generador Pro: Hora Original y Fuente 50pt")
+st.set_page_config(page_title="Provident Pro v21", layout="wide")
+st.title("🚀 Generador Pro: Fuente 50pt Real (Sin AutoFit)")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -125,16 +120,10 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
 
     df_display.insert(0, "Seleccionar", False)
 
-    # El CheckboxColumn activa la selección masiva en la cabecera
     df_edit = st.data_editor(
         df_display,
         column_config={
-            "Seleccionar": st.column_config.CheckboxColumn(
-                "Seleccionar", 
-                help="Clic en el título para seleccionar todos", 
-                default=False,
-                required=True
-            )
+            "Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False, required=True)
         },
         use_container_width=True,
         hide_index=True
@@ -174,8 +163,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     status.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
                     p_bar.progress((i + 1) / total)
 
-                    # HORA SIN PROPER
-                    hora_f = interpretar_hora(record.get('Hora', ''))
+                    hora_f = str(record.get('Hora', '')).strip()
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
                     concat_val = ", ".join([p for p in [f_punto if f_punto else f_ruta, f_muni] if p])
 
@@ -191,15 +179,19 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        shape.text_frame.clear()
-                                        p = shape.text_frame.paragraphs[0]
+                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 50pt
+                                        text_frame = shape.text_frame
+                                        text_frame.auto_size = None # Elimina ajuste automático
+                                        text_frame.clear()
+                                        
+                                        p = text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
-                                        run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # TODO EL TEXTO A 50PT
-                                        run.font.size = Pt(50)
-                                        shape.text_frame.word_wrap = True
+                                        run = p.add_run()
+                                        run.text = val
+                                        run.font.bold = True
+                                        run.font.color.rgb = AZUL_CELESTE
+                                        run.font.size = Pt(50) # FORZADO A 50PT
 
-                    # ... (Lógica de inserción de fotos para Reportes mantenida igual)
                     if modo == "Reportes":
                         tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                         for tf in tags_foto:
@@ -226,5 +218,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status.success(f"✅ ¡Finalizado! {total} archivos procesados.")
+            status.success(f"✅ ¡Completado! {total} archivos procesados con fuente 50pt.")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
