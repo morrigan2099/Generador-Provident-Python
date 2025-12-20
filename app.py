@@ -46,7 +46,6 @@ def formatear_hora_mx(hora_raw):
         return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
     except: return str(hora_raw)
 
-# --- MOTOR DE CONVERSIÓN ---
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
@@ -55,13 +54,14 @@ def generar_pdf(pptx_bytes):
         subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
         pdf_path = path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f: data = f.read()
-        os.remove(path); os.remove(pdf_path) if os.path.exists(pdf_path) else None
+        os.remove(path)
+        if os.path.exists(pdf_path): os.remove(pdf_path)
         return data
     except: return None
 
-# --- INTERFAZ ---
+# --- APP ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Estilo Preservado")
+st.title("🚀 Generador Final: Selección y Estilo")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -73,13 +73,13 @@ with st.sidebar:
         if r_tab.status_code == 200:
             tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
             tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
-            if st.button("🔄 Cargar"):
+            if st.button("🔄 Cargar Registros"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 st.session_state.raw_records = r_reg.json().get("records", [])
                 st.rerun()
 
 if st.session_state.raw_records:
-    # Mostramos la tabla estilizada
+    # Preparar tabla visual Proper Elegante
     data_list = []
     for r in st.session_state.raw_records:
         f = r['fields']
@@ -91,73 +91,97 @@ if st.session_state.raw_records:
         })
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
+    
+    st.write("### 📋 Selección de Registros")
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
+        st.divider()
         opcion_salida = st.radio("Tipo a generar:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, opcion_salida.upper())
-        archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         
-        # Mapeo de plantillas por tipo
-        tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
-        for t_p in tipos_sel:
-            if t_p not in st.session_state.map_memoria:
-                st.session_state.map_memoria[t_p] = archivos_pptx[0] if archivos_pptx else ""
-
-        if st.button("🔥 GENERAR ZIP"):
-            zip_buf = BytesIO()
-            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                for idx in sel_idx:
-                    rec = st.session_state.raw_records[idx]['fields']
-                    tipo_p = proper_elegante(rec.get('Tipo'))
+        if os.path.exists(folder_fisica):
+            archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
+            tipos_unicos = df_edit.loc[sel_idx, "Tipo"].unique()
+            
+            # --- BLOQUE DE SELECCIÓN DE PLANTILLAS (RESTAURADO) ---
+            st.write("### 📂 Asignación de Plantillas por Tipo")
+            cols = st.columns(len(tipos_unicos))
+            for i, t_p in enumerate(tipos_unicos):
+                with cols[i]:
+                    idx_mem = 0
+                    if t_p in st.session_state.map_memoria:
+                        if st.session_state.map_memoria[t_p] in archivos_pptx:
+                            idx_mem = archivos_pptx.index(st.session_state.map_memoria[t_p])
                     
-                    # 1. PREPARAR DATOS (CONCATENACIÓN)
-                    suc = str(rec.get('Sucursal') or '').strip()
-                    muni = str(rec.get('Municipio') or '').strip()
-                    punto = str(rec.get('Punto de reunion') or '').strip()
-                    ruta = str(rec.get('Ruta a seguir') or '').strip()
-                    secc = str(rec.get('Seccion') or '').strip()
+                    sel_p = st.selectbox(f"Plantilla para {t_p}:", archivos_pptx, index=idx_mem, key=f"s_{t_p}")
+                    st.session_state.map_memoria[t_p] = sel_p
 
-                    reemplazos = {
-                        "<<Consuc>>": proper_elegante(f"Sucursal {suc}" + (f", {muni}" if muni else "")),
-                        "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
-                        "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
-                        "<<Concat>>": proper_elegante(", ".join([p for p in [punto, ruta] if p]) + (f", Municipio {muni}" if muni else "") + (f", Seccion {secc}" if secc else "")),
-                        "<<Sucursal>>": proper_elegante(suc)
-                    }
+            if st.button("🔥 GENERAR ZIP ESTRUCTURADO"):
+                zip_buf = BytesIO()
+                with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
+                    for idx in sel_idx:
+                        rec = st.session_state.raw_records[idx]['fields']
+                        tipo_p = proper_elegante(rec.get('Tipo'))
+                        
+                        # Datos para concatenación
+                        suc = str(rec.get('Sucursal') or '').strip()
+                        muni = str(rec.get('Municipio') or '').strip()
+                        punto = str(rec.get('Punto de reunion') or '').strip()
+                        ruta = str(rec.get('Ruta a seguir') or '').strip()
+                        secc = str(rec.get('Seccion') or '').strip()
 
-                    # 2. PROCESAR PPTX CON PRESERVACIÓN DE ESTILO
-                    prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[tipo_p]))
-                    for slide in prs.slides:
-                        for shape in slide.shapes:
-                            if shape.has_text_frame:
-                                for paragraph in shape.text_frame.paragraphs:
-                                    for run in paragraph.runs:
+                        reemplazos = {
+                            "<<Consuc>>": proper_elegante(f"Sucursal {suc}" + (f", {muni}" if muni else "")),
+                            "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
+                            "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
+                            "<<Concat>>": proper_elegante(", ".join([p for p in [punto, ruta] if p]) + (f", Municipio {muni}" if muni else "") + (f", Seccion {secc}" if secc else "")),
+                            "<<Sucursal>>": proper_elegante(suc)
+                        }
+
+                        # Procesar PPTX
+                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[tipo_p]))
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if shape.has_text_frame:
+                                    for paragraph in shape.text_frame.paragraphs:
+                                        # Leemos el texto completo para evitar etiquetas rotas en runs
+                                        para_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
-                                            if tag in run.text:
-                                                # Guardamos el estilo original antes del reemplazo
-                                                font_size = run.font.size
-                                                font_name = run.font.name
-                                                font_bold = run.font.bold
-                                                font_color = run.font.color.rgb if run.font.color and hasattr(run.font.color, 'rgb') else None
+                                            if tag in para_text:
+                                                # Guardamos el formato del primer run que contiene parte del tag
+                                                f_size = paragraph.runs[0].font.size
+                                                f_name = paragraph.runs[0].font.name
+                                                f_bold = paragraph.runs[0].font.bold
                                                 
-                                                # Realizamos el reemplazo
-                                                run.text = run.text.replace(tag, val)
+                                                para_text = para_text.replace(tag, val)
                                                 
-                                                # Forzamos la restauración del estilo
-                                                run.font.size = font_size
-                                                run.font.name = font_name
-                                                run.font.bold = font_bold
-                                                if font_color: run.font.color.rgb = font_color
+                                                # Limpiamos runs y reescribimos con formato
+                                                paragraph.runs[0].text = para_text
+                                                paragraph.runs[0].font.size = f_size
+                                                paragraph.runs[0].font.name = f_name
+                                                paragraph.runs[0].font.bold = f_bold
+                                                for r_i in range(1, len(paragraph.runs)):
+                                                    paragraph.runs[r_i].text = ""
 
-                    # 3. GUARDADO
-                    pp_io = BytesIO(); prs.save(pp_io)
-                    pdf_data = generar_pdf(pp_io.getvalue())
-                    if pdf_data:
-                        dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
-                        nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + (".png" if opcion_salida == "Postales" else ".pdf")
-                        ruta_final = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{opcion_salida}/{proper_elegante(suc)}/{nombre}"
-                        zip_f.writestr(ruta_final, pdf_data)
+                        # Guardado y Zip
+                        pp_io = BytesIO(); prs.save(pp_io)
+                        pdf_data = generar_pdf(pp_io.getvalue())
+                        if pdf_data:
+                            dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
+                            nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + (".png" if opcion_salida == "Postales" else ".pdf")
+                            ruta_zip = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{opcion_salida}/{proper_elegante(suc)}/{nombre}"
+                            
+                            if opcion_salida == "Reportes":
+                                zip_f.writestr(ruta_zip, pdf_data)
+                            else:
+                                from pdf2image import convert_from_bytes
+                                images = convert_from_bytes(pdf_data)
+                                if images:
+                                    img_buf = BytesIO()
+                                    images[0].save(img_buf, format='PNG')
+                                    zip_f.writestr(ruta_zip, img_buf.getvalue())
 
-            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident.zip")
+                st.success("✅ ¡Archivos generados con éxito!")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
