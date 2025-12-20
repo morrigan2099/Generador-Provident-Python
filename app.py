@@ -59,9 +59,8 @@ def generar_pdf(pptx_bytes):
 
 # --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Texto Ampliado sin Desborde")
+st.title("🚀 Generador Pro: Escalado Dinámico (Max 34pt)")
 
-# ... (Bloque de carga de Airtable idéntico al anterior) ...
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -78,16 +77,14 @@ with st.sidebar:
                 st.rerun()
 
 if st.session_state.raw_records:
-    data_list = []
-    for r in st.session_state.raw_records:
-        f = r['fields']
-        data_list.append({"Tipo": proper_elegante(f.get("Tipo")), "Sucursal": proper_elegante(f.get("Sucursal")), "Municipio": proper_elegante(f.get("Municipio")), "Fecha": f.get("Fecha", "")})
+    data_list = [{"Tipo": proper_elegante(r['fields'].get("Tipo")), "Sucursal": proper_elegante(r['fields'].get("Sucursal")), "Municipio": proper_elegante(r['fields'].get("Municipio")), "Fecha": r['fields'].get("Fecha", "")} for r in st.session_state.raw_records]
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
+        st.divider()
         opcion_salida = st.radio("Tipo a generar:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, opcion_salida.upper())
         
@@ -103,76 +100,83 @@ if st.session_state.raw_records:
                     if t_p in st.session_state.map_memoria:
                         if st.session_state.map_memoria[t_p] in archivos_pptx:
                             idx_mem = archivos_pptx.index(st.session_state.map_memoria[t_p])
-                    st.session_state.map_memoria[t_p] = st.selectbox(f"Tipo: {t_p}", archivos_pptx, index=idx_mem, key=f"s_{t_p}")
+                    st.session_state.map_memoria[t_p] = st.selectbox(f"Plantilla {t_p}:", archivos_pptx, index=idx_mem, key=f"s_{t_p}")
 
-            if st.button("🔥 GENERAR ZIP"):
+            if st.button("🔥 EJECUTAR GENERACIÓN"):
+                progreso_bar = st.progress(0)
+                status_text = st.empty()
+                total = len(sel_idx)
+                
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                    for idx in sel_idx:
+                    for i, idx in enumerate(sel_idx):
                         rec = st.session_state.raw_records[idx]['fields']
-                        tipo_p = proper_elegante(rec.get('Tipo'))
+                        suc_p = proper_elegante(rec.get('Sucursal'))
                         
-                        # --- LÓGICA DE DATOS ---
-                        suc = str(rec.get('Sucursal') or '').strip()
+                        progreso_bar.progress((i + 1) / total)
+                        status_text.info(f"🔨 Generando {i+1} de {total}: **{suc_p}**")
+
+                        # 1. PREPARACIÓN DE DATOS
                         muni = str(rec.get('Municipio') or '').strip()
                         punto = str(rec.get('Punto de reunion') or '').strip()
                         ruta = str(rec.get('Ruta a seguir') or '').strip()
                         secc = str(rec.get('Seccion') or '').strip()
 
                         reemplazos = {
-                            "<<Consuc>>": proper_elegante(f"Sucursal {suc}" + (f", {muni}" if muni else "")),
+                            "<<Consuc>>": proper_elegante(f"Sucursal {rec.get('Sucursal')}" + (f", {muni}" if muni else "")),
                             "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
                             "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
                             "<<Concat>>": proper_elegante(", ".join([p for p in [punto, ruta] if p]) + (f", Municipio {muni}" if muni else "") + (f", Seccion {secc}" if secc else "")),
-                            "<<Sucursal>>": proper_elegante(suc)
+                            "<<Sucursal>>": proper_elegante(rec.get('Sucursal'))
                         }
 
-                        # --- PROCESAMIENTO PPTX CON ESCALADO ---
-                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[tipo_p]))
+                        # 2. PROCESAMIENTO PPTX CON LÓGICA DE ESCALADO DINÁMICO
+                        t_key = proper_elegante(rec.get('Tipo'))
+                        prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[t_key]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
                                     for paragraph in shape.text_frame.paragraphs:
-                                        full_p_text = "".join(run.text for run in paragraph.runs)
+                                        full_txt = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
-                                            if tag in full_p_text:
-                                                # 1. Reemplazo
-                                                new_text = full_p_text.replace(tag, val)
-                                                # 2. Lógica de Tamaño Dinámico
-                                                longitud = len(new_text)
-                                                if tag == "<<Conhora>>":
-                                                    size = 32 # Hora siempre grande
-                                                elif tag == "<<Concat>>":
-                                                    # Escala para texto largo (Concat suele ser el más extenso)
-                                                    size = 18 if longitud < 40 else (14 if longitud < 80 else 10)
-                                                else:
-                                                    # Escala para Consuc, Confecha, Sucursal
-                                                    size = 24 if longitud < 25 else (16 if longitud < 50 else 12)
+                                            if tag in full_txt:
+                                                new_txt = full_txt.replace(tag, val)
+                                                long = len(new_txt)
                                                 
-                                                # 3. Aplicar al Run
-                                                run = paragraph.runs[0]
-                                                run.text = new_text
-                                                run.font.size = Pt(size)
-                                                # Limpiar runs sobrantes
-                                                for i in range(1, len(paragraph.runs)):
-                                                    paragraph.runs[i].text = ""
+                                                # --- NUEVA LÓGICA DE ESCALADO ---
+                                                if tag == "<<Conhora>>":
+                                                    size = 32 # Hora fija grande
+                                                else:
+                                                    # Empezamos en 34 y bajamos según la longitud
+                                                    if long < 20: size = 34
+                                                    elif long < 40: size = 26
+                                                    elif long < 60: size = 18
+                                                    elif long < 100: size = 14
+                                                    else: size = 10 # Mínimo para textos muy largos (Concat)
 
-                        # --- GUARDADO ---
+                                                run = paragraph.runs[0]
+                                                run.text = new_txt
+                                                run.font.size = Pt(size)
+                                                # Limpiar runs adicionales para no duplicar texto
+                                                for r_idx in range(1, len(paragraph.runs)):
+                                                    paragraph.runs[r_idx].text = ""
+
+                        # 3. CONVERSIÓN Y EMPAQUETADO
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
-                            nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + (".png" if opcion_salida == "Postales" else ".pdf")
-                            ruta_zip = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{opcion_salida}/{proper_elegante(suc)}/{nombre}"
+                            nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {rec.get('Sucursal')}") + (".png" if opcion_salida == "Postales" else ".pdf")
+                            ruta_zip = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{opcion_salida}/{proper_elegante(rec.get('Sucursal'))}/{nombre}"
                             
                             if opcion_salida == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
                             else:
-                                images = convert_from_bytes(pdf_data)
-                                if images:
+                                imgs = convert_from_bytes(pdf_data)
+                                if imgs:
                                     img_io = BytesIO()
-                                    images[0].save(img_io, format='PNG')
+                                    imgs[0].save(img_io, format='PNG')
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                st.success("✅ Generación Completada")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
+                status_text.success(f"✅ ¡{total} archivos generados!")
+                st.download_button("📥 DESCARGAR RESULTADOS", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
