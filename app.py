@@ -32,6 +32,7 @@ TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71b
 BASE_DIR = "Plantillas"
 AZUL_CELESTE = RGBColor(0, 176, 240)
 MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 def proper_elegante(texto):
     if not texto or str(texto).lower() == "none": return ""
@@ -40,6 +41,16 @@ def proper_elegante(texto):
     excepciones = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del']
     resultado = [p.capitalize() if i == 0 or p not in excepciones else p for i, p in enumerate(palabras)]
     return " ".join(resultado)
+
+def interpretar_hora(hora_txt):
+    if not hora_txt: return ""
+    hora_txt = str(hora_txt).strip().lower()
+    for fmt in ["%H:%M", "%I:%M %p", "%H%M", "%I%p"]:
+        try:
+            dt_hora = datetime.strptime(hora_txt.replace(" ", ""), fmt.replace(" ", ""))
+            return dt_hora.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
+        except: continue
+    return hora_txt
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
@@ -54,8 +65,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v6", layout="wide")
-st.title("🚀 Generador Pro: Ruta mm - mmmm")
+st.set_page_config(page_title="Provident Pro v7", layout="wide")
+st.title("🚀 Generador Pro: Confechor y Concat Restaurados")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -119,7 +130,18 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     f_punto, f_ruta = record.get('Punto de reunion', ''), record.get('Ruta a seguir', '')
                     lugar_corto = proper_elegante(min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else "")
 
-                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": str(record.get('Seccion', '')).upper()}
+                    # LÓGICA DE CONFECHOR Y CONCAT
+                    hora_f = interpretar_hora(record.get('Hora', ''))
+                    confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
+                    concat_val = f"{f_punto}, {f_ruta}, {f_muni}"
+
+                    reemplazos = {
+                        "<<Tipo>>": f_tipo, 
+                        "<<Sucursal>>": f_suc, 
+                        "<<Seccion>>": str(record.get('Seccion', '')).upper(),
+                        "<<Confechor>>": proper_elegante(confechor),
+                        "<<Concat>>": proper_elegante(concat_val)
+                    }
                     
                     prs = Presentation(os.path.join(folder_fisica, config["plantillas"][record.get('Tipo')]))
                     for slide in prs.slides:
@@ -131,8 +153,12 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # LÓGICA DE TIPO: 64pt reduciendo hasta 2 líneas
-                                        run.font.size = Pt(64) if tag == "<<Tipo>>" else Pt(36)
+                                        
+                                        # REGLA DE ORO: Tipo a 64pt
+                                        if tag == "<<Tipo>>":
+                                            run.font.size = Pt(64)
+                                        else:
+                                            run.font.size = Pt(36)
                                         shape.text_frame.word_wrap = True
 
                     if modo == "Reportes":
@@ -150,15 +176,13 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     pp_io = BytesIO(); prs.save(pp_io)
                     pdf_data = generar_pdf(pp_io.getvalue())
                     if pdf_data:
-                        # NOMENCLATURA ARCHIVO: Fecha - Tipo, Sucursal - Lugar Corto, Municipio
                         f_str = f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}"
                         nom_file = f"{f_str} - {f_tipo}, {f_suc} - {lugar_corto}, {f_muni}"
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         
-                        # RUTA CARPETAS: Año / mm - mmmm / Modo / Sucursal
                         mes_folder = f"{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}"
                         ruta = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:140]}{ext}"
                         zip_f.writestr(ruta, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-            st.success("✅ Generación Completada con estructura mm - mmmm")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v6.zip")
+            st.success("✅ Generación finalizada con todos los campos restaurados.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v7.zip")
