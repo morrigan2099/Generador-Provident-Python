@@ -6,7 +6,7 @@ import os
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
@@ -29,7 +29,6 @@ def cargar_config():
 def guardar_config_json(config_data):
     with open(CONFIG_FILE, "w") as f: 
         json.dump(config_data, f, indent=4)
-    st.sidebar.success("✅ Configuración guardada en JSON")
 
 if 'config' not in st.session_state:
     st.session_state.config = cargar_config()
@@ -72,8 +71,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v12", layout="wide")
-st.title("🚀 Generador Pro: Placeholders 50pt y Guardado JSON")
+st.set_page_config(page_title="Provident Pro v16", layout="wide")
+st.title("🚀 Generador Pro: Selección Integrada y Progreso")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -92,11 +91,22 @@ with st.sidebar:
                 st.rerun()
     
     st.divider()
-    if st.button("💾 GUARDAR CONFIGURACIÓN ACTUAL", use_container_width=True, type="primary"):
+    st.header("📂 Gestión de Vínculos")
+    if st.button("💾 GUARDAR TODO EN JSON", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
+        st.toast("Configuración guardada")
+
+    if st.session_state.config["plantillas"]:
+        for t_key, p_val in list(st.session_state.config["plantillas"].items()):
+            col_t, col_b = st.columns([4, 1])
+            col_t.caption(f"**{t_key}**")
+            if col_b.button("🗑️", key=f"del_{t_key}"):
+                del st.session_state.config["plantillas"][t_key]
+                guardar_config_json(st.session_state.config)
+                st.rerun()
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    # Detección de columnas
+    # Obtener todas las columnas
     all_ordered_keys = []
     for r in st.session_state.raw_records:
         for key in r['fields'].keys():
@@ -104,54 +114,75 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
     
     df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     
-    # Visualización
+    # Configurar visualización
     saved_cols = st.session_state.config.get("columnas_visibles", [])
     valid_defaults = [c for c in saved_cols if c in all_ordered_keys]
-    if not valid_defaults:
-        try:
-            idx_foto = all_ordered_keys.index("Foto de equipo")
-            valid_defaults = all_ordered_keys[:idx_foto]
-        except: valid_defaults = all_ordered_keys
-
+    if not valid_defaults: valid_defaults = all_ordered_keys[:8]
     cols_to_show = st.multiselect("Columnas visibles:", all_ordered_keys, default=valid_defaults)
     st.session_state.config["columnas_visibles"] = cols_to_show
 
-    # Asegurar columnas críticas
+    # Asegurar columna Tipo para la lógica de plantillas
     cols_para_df = list(cols_to_show)
-    for critical in ["Tipo", "Fecha", "Sucursal"]:
-        if critical not in cols_para_df: cols_para_df.append(critical)
-
+    if "Tipo" not in cols_para_df: cols_para_df.append("Tipo")
     df_display = df[[c for c in cols_para_df if c in df.columns]].copy()
     df_display.insert(0, "Seleccionar", False)
     
-    column_config = {c: None for c in ["Tipo", "Fecha", "Sucursal"] if c not in cols_to_show}
+    # --- EDITOR DE DATOS CON CHECKBOX EN TÍTULO ---
+    column_config_editor = {
+        "Seleccionar": st.column_config.CheckboxColumn(
+            "Seleccionar",
+            help="Marca el checkbox del título para seleccionar todos",
+            default=False,
+        ),
+        "Tipo": None if "Tipo" not in cols_to_show else st.column_config.TextColumn("Tipo")
+    }
 
-    df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True, column_config=column_config)
+    df_edit = st.data_editor(
+        df_display, 
+        use_container_width=True, 
+        hide_index=True, 
+        column_config=column_config_editor
+    )
+    
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        modo = st.radio("Modo:", ["Postales", "Reportes"], horizontal=True)
+        modo = st.radio("Acción:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, modo.upper())
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         
-        tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
-        for t in tipos_sel:
+        tipos_seleccionados = df_edit.loc[sel_idx, "Tipo"].unique()
+        
+        st.subheader("🔗 Configuración de Plantillas")
+        c1, c2 = st.columns(2)
+        for i, t in enumerate(tipos_seleccionados):
             t_str = str(t)
-            default_p = st.session_state.config["plantillas"].get(t_str, archivos_pptx[0] if archivos_pptx else "")
-            nueva_p = st.selectbox(f"Plantilla para {t_str}:", archivos_pptx, 
-                                 index=archivos_pptx.index(default_p) if default_p in archivos_pptx else 0, key=f"p_{t_str}")
-            st.session_state.config["plantillas"][t_str] = nueva_p
+            p_g = st.session_state.config["plantillas"].get(t_str)
+            with (c1 if i % 2 == 0 else c2):
+                idx_d = archivos_pptx.index(p_g) if p_g in archivos_pptx else 0
+                sel_p = st.selectbox(f"Tipo: {t_str}", archivos_pptx, index=idx_d, key=f"v_{t_str}")
+                st.session_state.config["plantillas"][t_str] = sel_p
 
-        if st.button("🔥 GENERAR ARCHIVOS"):
+        if st.button("🔥 INICIAR GENERACIÓN", use_container_width=True, type="primary"):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             zip_buf = BytesIO()
+            
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                for idx in sel_idx:
+                total = len(sel_idx)
+                for i, idx in enumerate(sel_idx):
                     record = st.session_state.raw_records[idx]['fields']
+                    tipo_rec = record.get('Tipo')
+                    plantilla_final = st.session_state.config["plantillas"].get(tipo_rec)
+                    
                     dt = datetime.strptime(record.get('Fecha', '2025-01-01'), '%Y-%m-%d')
                     f_suc, f_muni, f_tipo = [proper_elegante(record.get(k, '')) for k in ['Sucursal', 'Municipio', 'Tipo']]
-                    
                     f_punto, f_ruta = str(record.get('Punto de reunion', '')).strip(), str(record.get('Ruta a seguir', '')).strip()
                     lugar_corto = proper_elegante(f_punto if f_punto else f_ruta)
+                    
+                    status_text.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
+                    progress_bar.progress((i + 1) / total)
+
                     hora_f = interpretar_hora(record.get('Hora', ''))
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
                     concat_val = ", ".join([p for p in [f_punto if f_punto else f_ruta, f_muni] if p])
@@ -162,9 +193,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         "<<Confechor>>": proper_elegante(confechor), "<<Concat>>": proper_elegante(concat_val)
                     }
                     
-                    p_nombre = st.session_state.config["plantillas"].get(record.get('Tipo'), archivos_pptx[0])
-                    prs = Presentation(os.path.join(folder_fisica, p_nombre))
-                    
+                    prs = Presentation(os.path.join(folder_fisica, plantilla_final))
                     for slide in prs.slides:
                         for shape in slide.shapes:
                             if shape.has_text_frame:
@@ -174,18 +203,35 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # REGLA: Tipo 64pt, demás placeholders 50pt
+                                        # REGLA: Tipo 64pt, demás 50pt
                                         run.font.size = Pt(64) if tag == "<<Tipo>>" else Pt(50)
                                         shape.text_frame.word_wrap = True
 
-                    # (Lógica de fotos y PDF omitida aquí por brevedad, igual a v11)
+                    if modo == "Reportes":
+                        tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
+                        for tf in tags_foto:
+                            adj = record.get(tf)
+                            if adj and isinstance(adj, list):
+                                try:
+                                    r_img = requests.get(adj[0].get('url'))
+                                    if r_img.status_code == 200:
+                                        img_io = BytesIO(r_img.content)
+                                        for slide in prs.slides:
+                                            for shape in slide.shapes:
+                                                if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
+                                                    slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
+                                except: pass
+
                     pp_io = BytesIO(); prs.save(pp_io)
-                    pdf_data = generar_pdf(pp_io.getvalue())
-                    if pdf_data:
+                    data_out = generar_pdf(pp_io.getvalue())
+                    if data_out:
                         f_str = f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}"
                         nom_file = f"{f_str} - {f_tipo}, {f_suc} - {lugar_corto}, {f_muni}"
+                        ext = ".pdf" if modo == "Reportes" else ".jpg"
                         mes_folder = f"{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}"
-                        ruta = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:135]}.pdf"
-                        zip_f.writestr(ruta, pdf_data)
+                        ruta_zip = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:130]}{ext}"
+                        contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
+                        zip_f.writestr(ruta_zip, contenido)
 
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v12.zip")
+            status_text.success(f"✅ ¡Completado! {total} archivos procesados.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
