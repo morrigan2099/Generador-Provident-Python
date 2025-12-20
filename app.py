@@ -49,14 +49,9 @@ def proper_elegante(texto):
     return " ".join(resultado)
 
 def interpretar_hora(hora_txt):
+    """Retorna la hora tal cual viene de Airtable (sin proper)"""
     if not hora_txt: return ""
-    hora_txt = str(hora_txt).strip().lower()
-    for fmt in ["%H:%M", "%I:%M %p", "%H%M", "%I%p"]:
-        try:
-            dt_hora = datetime.strptime(hora_txt.replace(" ", ""), fmt.replace(" ", ""))
-            return dt_hora.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
-        except: continue
-    return hora_txt
+    return str(hora_txt).strip()
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
@@ -71,8 +66,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v19", layout="wide")
-st.title("🚀 Generador Pro: Flujo de Acción y Selección")
+st.set_page_config(page_title="Provident Pro v20", layout="wide")
+st.title("🚀 Generador Pro: Hora Original y Fuente 50pt")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -106,13 +101,11 @@ with st.sidebar:
             st.rerun()
 
 # --- CUERPO PRINCIPAL ---
-# 1. SELECCIONAR ACCIÓN PRIMERO
 modo = st.radio("1. Selecciona el formato de salida:", ["Postales", "Reportes"], horizontal=True)
 folder_fisica = os.path.join(BASE_DIR, modo.upper())
 archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    # 2. TABLA DE REGISTROS
     st.subheader("2. Selecciona los registros a generar")
     all_keys = []
     for r in st.session_state.raw_records:
@@ -126,20 +119,19 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
     cols_to_show = st.multiselect("Columnas de la tabla:", all_keys, default=valid_cols)
     st.session_state.config["columnas_visibles"] = cols_to_show
 
-    # Preparar DF con columna de selección
     df_display = df[[c for c in cols_to_show if c in df.columns]].copy()
     if "Tipo" not in df_display.columns:
-        df_display["Tipo"] = df["Tipo"] # Necesario para el vínculo aunque no se vea
+        df_display["Tipo"] = df["Tipo"]
 
     df_display.insert(0, "Seleccionar", False)
 
-    # CONFIGURACIÓN DEL EDITOR (Incluye Checkbox Maestro en el título)
+    # El CheckboxColumn activa la selección masiva en la cabecera
     df_edit = st.data_editor(
         df_display,
         column_config={
             "Seleccionar": st.column_config.CheckboxColumn(
                 "Seleccionar", 
-                help="Haz clic aquí para seleccionar todos", 
+                help="Clic en el título para seleccionar todos", 
                 default=False,
                 required=True
             )
@@ -151,7 +143,6 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        # 3. VINCULACIÓN DE PLANTILLAS
         st.subheader("3. Verifica las plantillas vinculadas")
         tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
         c1, c2 = st.columns(2)
@@ -163,7 +154,6 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                 sel_p = st.selectbox(f"Plantilla para {t_str}:", archivos_pptx, index=idx_def, key=f"sel_{t_str}")
                 st.session_state.config["plantillas"][t_str] = sel_p
 
-        # 4. BOTÓN DE GENERACIÓN
         if st.button("🔥 GENERAR ARCHIVOS", use_container_width=True, type="primary"):
             p_bar = st.progress(0)
             status = st.empty()
@@ -184,6 +174,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     status.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
                     p_bar.progress((i + 1) / total)
 
+                    # HORA SIN PROPER
                     hora_f = interpretar_hora(record.get('Hora', ''))
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
                     concat_val = ", ".join([p for p in [f_punto if f_punto else f_ruta, f_muni] if p])
@@ -204,10 +195,11 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # TODOS LOS PLACEHOLDERS A 50PT
+                                        # TODO EL TEXTO A 50PT
                                         run.font.size = Pt(50)
                                         shape.text_frame.word_wrap = True
 
+                    # ... (Lógica de inserción de fotos para Reportes mantenida igual)
                     if modo == "Reportes":
                         tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                         for tf in tags_foto:
@@ -234,5 +226,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status.success(f"✅ ¡Proceso terminado! {total} archivos listos.")
+            status.success(f"✅ ¡Finalizado! {total} archivos procesados.")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
