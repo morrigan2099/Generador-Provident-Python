@@ -64,6 +64,7 @@ def generar_pdf(pptx_bytes):
         tmp.write(pptx_bytes)
         path = tmp.name
     try:
+        # Aquí es donde LibreOffice toma el control para generar el PDF
         subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
         pdf_path = path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f: data = f.read()
@@ -72,12 +73,13 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- UI ---
-st.set_page_config(page_title="Provident Pro Ultra", layout="wide")
-st.title("🚀 Generador Pro: Formato de Cuadro Centrado")
+# --- UI STREAMLIT ---
+st.set_page_config(page_title="Provident Pro v2", layout="wide")
+st.title("🚀 Generador Pro: Centrado para LibreOffice")
 
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 
+# ... (Sidebar y Carga de datos se mantienen igual) ...
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -122,7 +124,6 @@ if st.session_state.raw_records:
                         dt = datetime.strptime(f_fecha, '%Y-%m-%d')
                         f_suc, f_muni, f_tipo = [str(f.get(k, '')).strip() for k in ['Sucursal', 'Municipio', 'Tipo']]
                         f_punto, f_ruta = [str(f.get(k, '')).strip() for k in ['Punto de reunion', 'Ruta a seguir']]
-                        f_seccion = str(f.get('Seccion', '')).upper()
                         
                         lugar_corto = min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else ""
 
@@ -132,43 +133,40 @@ if st.session_state.raw_records:
                             "<<Consuc>>": forzar_dos_lineas(proper_elegante(f"Sucursal {f_suc}, {f_muni}")),
                             "<<Concat>>": forzar_dos_lineas(proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}")),
                             "<<Sucursal>>": proper_elegante(f_suc),
-                            "<<Seccion>>": f_seccion 
+                            "<<Seccion>>": str(f.get('Seccion', '')).upper()
                         }
 
-                        s_text.text(f"🖋️ Aplicando formato centrado a {suc_actual}...")
+                        s_text.text(f"🖋️ Procesando {suc_actual}...")
                         prs = Presentation(os.path.join(folder_fisica, map_memoria[f_tipo]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    # CONFIGURACIÓN DEL CUADRO DE TEXTO
-                                    tf = shape.text_frame
-                                    txt_old = tf.text
-                                    tag_hit = next((tag for tag in reemplazos if tag in txt_old), None)
+                                    txt_shape = shape.text_frame.text
+                                    tag_encontrado = next((tag for tag in reemplazos if tag in txt_shape), None)
                                     
-                                    if tag_hit:
-                                        # Aplicamos formato al contenedor
-                                        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                        tf.word_wrap = True
-                                        tf.margin_top = tf.margin_bottom = tf.margin_left = tf.margin_right = 0
+                                    if tag_encontrado:
+                                        # RESET PARA LIBREOFFICE: Limpiamos y re-centramos
+                                        nuevo_texto = reemplazos[tag_encontrado]
+                                        shape.text_frame.clear() 
                                         
-                                        # Limpieza e inserción
-                                        txt_nuevo = txt_old.replace(tag_hit, reemplazos[tag_hit])
-                                        tf.clear()
-                                        p = tf.paragraphs[0]
-                                        p.alignment = PP_ALIGN.CENTER # Centrado horizontal del párrafo
+                                        p = shape.text_frame.paragraphs[0]
+                                        p.alignment = PP_ALIGN.CENTER # Centrado horizontal
+                                        shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE # Centrado vertical
                                         
                                         run = p.add_run()
-                                        run.text = txt_nuevo
+                                        run.text = nuevo_texto
                                         run.font.color.rgb = AZUL_CELESTE
                                         run.font.bold = True
                                         
-                                        # Ajuste de tamaños
-                                        if tag_hit in ["<<Confechor>>", "<<Tipo>>"]: run.font.size = Pt(32)
-                                        elif tag_hit == "<<Sucursal>>": run.font.size = Pt(36)
-                                        elif tag_hit == "<<Seccion>>": run.font.size = Pt(38)
-                                        else: run.font.size = Pt(46)
+                                        # Ajuste de Tamaños (Tipo ahora igual que Confechor)
+                                        if tag_encontrado in ["<<Confechor>>", "<<Tipo>>"]:
+                                            run.font.size = Pt(32)
+                                        elif tag_encontrado == "<<Sucursal>>":
+                                            run.font.size = Pt(36)
+                                        else: 
+                                            run.font.size = Pt(46)
 
-                        # Procesamiento de fotos y guardado...
+                        # (Manejo de fotos y guardado en ZIP permanece igual)
                         if modo == "Reportes":
                             for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
                                 adj = f.get(tf)
@@ -184,10 +182,12 @@ if st.session_state.raw_records:
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            nom_file = f"{proper_elegante(MESES_ES[dt.month-1] + ' ' + str(dt.day).zfill(2) + ' de ' + str(dt.year))} - {proper_elegante(lugar_corto)}, {proper_elegante(f_muni)} - {proper_elegante(f_tipo)}, {proper_elegante(f_suc)}"
+                            # Nomenclatura Proper Elegante
+                            f_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}")
+                            nom_file = f"{f_nom} - {proper_elegante(lugar_corto)}, {proper_elegante(f_muni)} - {proper_elegante(f_tipo)}, {proper_elegante(f_suc)}"
                             ext = ".pdf" if modo == "Reportes" else ".jpg"
                             ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)}/{modo}/{proper_elegante(f_suc)}/{nom_file[:140] + ext}"
                             zip_f.writestr(ruta_zip, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-                p_bar.progress(1.0); s_text.text("✅ ¡Proceso completado!")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Final.zip")
+                p_bar.progress(1.0); s_text.text("✅ ¡ZIP Generado con éxito!")
+                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_v2.zip")
