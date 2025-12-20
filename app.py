@@ -55,9 +55,9 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- APP ---
+# --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Nomenclatura y Contenido Restaurado")
+st.title("🚀 Generador Pro: Salida JPG Ligera (<1MB)")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -82,7 +82,7 @@ if st.session_state.raw_records:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        op_salida = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
+        op_salida = st.radio("Formato:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, op_salida.upper())
         
         if os.path.exists(folder_fisica):
@@ -102,14 +102,13 @@ if st.session_state.raw_records:
                     for i, idx in enumerate(sel_idx):
                         rec = st.session_state.raw_records[idx]['fields']
                         
-                        # --- 1. LÓGICA DE DATOS (CONCATENACIÓN CONTINUA) ---
+                        # 1. DATOS Y REEMPLAZOS (MANTENIENDO LÓGICA GIGANTE)
                         punto = str(rec.get('Punto de reunion') or '').strip()
                         ruta = str(rec.get('Ruta a seguir') or '').strip()
                         muni = str(rec.get('Municipio') or '').strip()
                         secc = str(rec.get('Seccion') or '').strip()
                         suc_raw = str(rec.get('Sucursal') or '').strip()
 
-                        # Texto para el Placeholder (Continuo)
                         c_list = [p for p in [punto, ruta] if p]
                         if muni: c_list.append(f"Municipio {muni}")
                         if secc: c_list.append(f"Seccion {secc}")
@@ -123,7 +122,7 @@ if st.session_state.raw_records:
                             "<<Sucursal>>": proper_elegante(suc_raw)
                         }
 
-                        # --- 2. PROCESAMIENTO PPTX (RESTAURADO) ---
+                        # 2. PROCESAMIENTO PPTX
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[proper_elegante(rec.get('Tipo'))]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
@@ -134,7 +133,6 @@ if st.session_state.raw_records:
                                         for tag, val in reemplazos.items():
                                             if tag in full_txt:
                                                 new_txt = full_txt.replace(tag, val)
-                                                # Escalado Gigante
                                                 if tag == "<<Concat>>": size = 42 if len(new_txt) < 60 else 36
                                                 elif tag == "<<Conhora>>": size = 42
                                                 else: size = 42 if len(new_txt) < 30 else 32
@@ -145,24 +143,23 @@ if st.session_state.raw_records:
                                                 for r_idx in range(1, len(paragraph.runs)):
                                                     paragraph.runs[r_idx].text = ""
 
-                        # --- 3. NOMENCLATURA DEL ARCHIVO ---
+                        # 3. NOMENCLATURA INTELIGENTE
                         fecha_f = formatear_fecha_mx(rec.get('Fecha'))
                         tipo_f, suc_f = str(rec.get('Tipo') or '').upper(), suc_raw.upper()
-                        
                         partes_nom = [p for p in [punto, ruta] if p]
                         if muni: partes_nom.append(muni)
-                        
-                        str_nom = ", ".join(partes_nom)
-                        nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {str_nom}"
+                        nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {', '.join(partes_nom)}"
                         
                         if len(nombre_base) > 150:
                             partes_red = [ruta] if (punto and ruta and len(punto) < len(ruta)) else ([punto] if punto else [])
                             if muni: partes_red.append(muni)
                             nombre_base = f"{fecha_f} - {tipo_f} {suc_f} - {', '.join(partes_red)}"
 
-                        nombre_final = proper_elegante(nombre_base) + (".png" if op_salida == "Postales" else ".pdf")
+                        # Cambio de extensión a .jpg
+                        ext = ".jpg" if op_salida == "Postales" else ".pdf"
+                        nombre_final = proper_elegante(nombre_base) + ext
 
-                        # --- 4. GUARDADO ---
+                        # 4. GUARDADO Y CONVERSIÓN A JPG COMPRIMIDO
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
@@ -175,11 +172,13 @@ if st.session_state.raw_records:
                             else:
                                 imgs = convert_from_bytes(pdf_data)
                                 if imgs:
-                                    img_io = BytesIO(); imgs[0].save(img_io, format='PNG')
+                                    img_io = BytesIO()
+                                    # Convertimos a JPG con calidad 85 para asegurar peso < 1MB
+                                    imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85, optimize=True)
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
                         
                         progreso_bar.progress((i + 1) / len(sel_idx))
-                        status_text.info(f"Listo: {nombre_final[:40]}...")
+                        status_text.info(f"Generando JPG ligero: {nombre_final[:40]}...")
 
-                st.success("✅ Proceso completado con éxito")
-                st.download_button("📥 DESCARGAR ZIP FINAL", zip_buf.getvalue(), "Provident_Pro_Final.zip")
+                st.success("✅ ZIP con JPGs optimizados generado")
+                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_Final.zip")
