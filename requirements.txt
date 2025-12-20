@@ -1,0 +1,5 @@
+streamlit
+python-pptx
+requests
+cloudinary
+Pillow
