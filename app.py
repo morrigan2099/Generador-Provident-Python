@@ -47,7 +47,6 @@ def formatear_confechor_lineal(fecha_str, hora_txt):
         dia_semana = DIAS_ES[dt.weekday()]
         mes_nombre = MESES_ES[dt.month-1]
         hora_formateada = interpretar_hora(hora_txt)
-        # Retorna una sola línea sin \n
         return proper_elegante(f"{dia_semana} {mes_nombre} {dt.day:02d} de {dt.year}, {hora_formateada}")
     except: return f"{fecha_str}, {hora_txt}"
 
@@ -65,11 +64,12 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v2", layout="wide")
-st.title("🚀 Generador Pro: Distribución Automática de Texto")
+st.set_page_config(page_title="Provident Pro XL", layout="wide")
+st.title("🚀 Generador Pro: Campo Tipo a 2 Líneas XL")
 
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 
+# (Carga de datos omitida por brevedad, se mantiene igual)
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -117,7 +117,6 @@ if st.session_state.raw_records:
                         
                         lugar_corto = min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else ""
 
-                        # TODOS LOS REEMPLAZOS EN UNA SOLA LÍNEA SIN \n
                         reemplazos = {
                             "<<Tipo>>": proper_elegante(f_tipo),
                             "<<Confechor>>": formatear_confechor_lineal(f_fecha, f.get('Hora', '')),
@@ -127,7 +126,7 @@ if st.session_state.raw_records:
                             "<<Seccion>>": str(f.get('Seccion', '')).upper()
                         }
 
-                        s_text.text(f"🖋️ Optimizando textos para {suc_actual}...")
+                        s_text.text(f"🖋️ Aplicando formato XL a {suc_actual}...")
                         prs = Presentation(os.path.join(folder_fisica, map_memoria[f_tipo]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
@@ -142,26 +141,29 @@ if st.session_state.raw_records:
                                         p = shape.text_frame.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                        shape.text_frame.word_wrap = True # Habilita que se divida en 2 líneas si es largo
+                                        shape.text_frame.word_wrap = True # CRÍTICO para las 2 líneas
+                                        shape.text_frame.margin_top = shape.text_frame.margin_bottom = 0
                                         
                                         run = p.add_run()
                                         run.text = nuevo_texto
                                         run.font.color.rgb = AZUL_CELESTE
                                         run.font.bold = True
                                         
-                                        # AGRANDAR HASTA QUE OCUPE EL ESPACIO (Ajuste de jerarquía)
-                                        if tag_encontrado in ["<<Confechor>>", "<<Tipo>>"]:
-                                            run.font.size = Pt(40) # Aumentado para buscar las 2 líneas distribuidas
+                                        # ASIGNACIÓN DE TAMAÑOS
+                                        if tag_encontrado == "<<Tipo>>":
+                                            run.font.size = Pt(54) # TAMAÑO XL PARA FORZAR 2 LÍNEAS
+                                        elif tag_encontrado == "<<Confechor>>":
+                                            run.font.size = Pt(36)
                                         elif tag_encontrado == "<<Sucursal>>":
                                             run.font.size = Pt(36)
                                         elif tag_encontrado == "<<Seccion>>":
                                             run.font.size = Pt(38)
-                                        else: 
+                                        else: # Ubicaciones (Concat)
                                             run.font.size = Pt(48)
 
-                        # (Manejo de fotos se mantiene igual...)
+                        # (Procesamiento de fotos y guardado en ZIP se mantiene igual)
                         if modo == "Reportes":
-                            for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
+                            for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmware", "Lista de asistencia"]:
                                 adj = f.get(tf)
                                 if adj and isinstance(adj, list):
                                     r_img = requests.get(adj[0].get('url'))
@@ -174,12 +176,11 @@ if st.session_state.raw_records:
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            # Nomenclatura Proper Elegante
                             f_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}")
                             nom_file = f"{f_nom} - {proper_elegante(lugar_corto)}, {proper_elegante(f_muni)} - {proper_elegante(f_tipo)}, {proper_elegante(f_suc)}"
                             ext = ".pdf" if modo == "Reportes" else ".jpg"
                             ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)}/{modo}/{proper_elegante(f_suc)}/{nom_file[:140] + ext}"
                             zip_f.writestr(ruta_zip, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-                p_bar.progress(1.0); s_text.text("✅ ¡ZIP Generado!")
-                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_Auto_Line.zip")
+                p_bar.progress(1.0); s_text.text("✅ ¡ZIP Generado con Tipo XL!")
+                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_XL.zip")
