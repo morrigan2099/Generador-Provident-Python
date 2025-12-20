@@ -65,8 +65,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v7", layout="wide")
-st.title("🚀 Generador Pro: Confechor y Concat Restaurados")
+st.set_page_config(page_title="Provident Pro v8", layout="wide")
+st.title("🚀 Generador Pro: Columnas Completas y Comas Corregidas")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -85,15 +85,20 @@ with st.sidebar:
                 st.rerun()
 
 if 'raw_records' in st.session_state and st.session_state.raw_records:
-    record_fields = st.session_state.raw_records[0]['fields']
-    all_keys = list(record_fields.keys())
+    # ESCANEAR TODOS LOS REGISTROS para no perder ninguna columna
+    columnas_detectadas = set()
+    for r in st.session_state.raw_records:
+        columnas_detectadas.update(r['fields'].keys())
+    
+    all_keys = sorted(list(columnas_detectadas))
+    
     try:
         idx_end = all_keys.index("Foto de equipo")
         cols_utiles = all_keys[:idx_end]
     except: cols_utiles = all_keys
 
     df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    cols_to_show = st.multiselect("Visualizar campos:", cols_utiles, default=config.get("columnas_visibles", cols_utiles))
+    cols_to_show = st.multiselect("Visualizar campos:", cols_utiles, default=config.get("columnas_visibles", [c for c in cols_utiles if c in df.columns]))
     
     if cols_to_show != config["columnas_visibles"]:
         config["columnas_visibles"] = cols_to_show
@@ -127,13 +132,19 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     
                     dt = datetime.strptime(record.get('Fecha', '2025-01-01'), '%Y-%m-%d')
                     f_suc, f_muni, f_tipo = [proper_elegante(record.get(k, '')) for k in ['Sucursal', 'Municipio', 'Tipo']]
-                    f_punto, f_ruta = record.get('Punto de reunion', ''), record.get('Ruta a seguir', '')
-                    lugar_corto = proper_elegante(min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else "")
+                    
+                    # LÓGICA DE UBICACIÓN SIN COMAS DUPLICADAS
+                    f_punto = str(record.get('Punto de reunion', '')).strip()
+                    f_ruta = str(record.get('Ruta a seguir', '')).strip()
+                    lugar_val = f_punto if f_punto else f_ruta
+                    lugar_corto = proper_elegante(lugar_val)
 
-                    # LÓGICA DE CONFECHOR Y CONCAT
                     hora_f = interpretar_hora(record.get('Hora', ''))
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
-                    concat_val = f"{f_punto}, {f_ruta}, {f_muni}"
+                    
+                    # Concat: Lugar (punto o ruta) + Municipio (un solo separador)
+                    componentes_concat = [o for o in [f_punto, f_ruta, f_muni] if o and str(o).strip()]
+                    concat_val = ", ".join(componentes_concat)
 
                     reemplazos = {
                         "<<Tipo>>": f_tipo, 
@@ -143,7 +154,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         "<<Concat>>": proper_elegante(concat_val)
                     }
                     
-                    prs = Presentation(os.path.join(folder_fisica, config["plantillas"][record.get('Tipo')]))
+                    prs = Presentation(os.path.join(folder_fisica, config["plantillas"][record.get('Tipo', 'Tipo')]))
                     for slide in prs.slides:
                         for shape in slide.shapes:
                             if shape.has_text_frame:
@@ -154,11 +165,8 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
                                         
-                                        # REGLA DE ORO: Tipo a 64pt
-                                        if tag == "<<Tipo>>":
-                                            run.font.size = Pt(64)
-                                        else:
-                                            run.font.size = Pt(36)
+                                        # SIEMPRE 64pt para Tipo (reduciendo a 2 líneas)
+                                        run.font.size = Pt(64) if tag == "<<Tipo>>" else Pt(36)
                                         shape.text_frame.word_wrap = True
 
                     if modo == "Reportes":
@@ -177,6 +185,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     pdf_data = generar_pdf(pp_io.getvalue())
                     if pdf_data:
                         f_str = f"{MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}"
+                        # Nomenclatura: Fecha - Tipo, Sucursal - Lugar Corto, Municipio
                         nom_file = f"{f_str} - {f_tipo}, {f_suc} - {lugar_corto}, {f_muni}"
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         
@@ -184,5 +193,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         ruta = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_file[:140]}{ext}"
                         zip_f.writestr(ruta, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-            st.success("✅ Generación finalizada con todos los campos restaurados.")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v7.zip")
+            st.success("✅ ¡Generación exitosa! Columnas y comas corregidas.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v8.zip")
