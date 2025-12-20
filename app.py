@@ -31,13 +31,6 @@ def proper_elegante(texto):
             resultado.append(p)
     return " ".join(resultado)
 
-def forzar_dos_lineas(texto):
-    if not texto or "\n" in texto: return texto
-    palabras = texto.split()
-    if len(palabras) < 2: return texto
-    mitad = len(palabras) // 2
-    return " ".join(palabras[:mitad]) + "\n" + " ".join(palabras[mitad:])
-
 def interpretar_hora(hora_txt):
     if not hora_txt: return ""
     hora_txt = str(hora_txt).strip().lower()
@@ -48,23 +41,21 @@ def interpretar_hora(hora_txt):
         except: continue
     return hora_txt
 
-def formatear_confechor(fecha_str, hora_txt):
+def formatear_confechor_lineal(fecha_str, hora_txt):
     try:
         dt = datetime.strptime(str(fecha_str).strip(), '%Y-%m-%d')
         dia_semana = DIAS_ES[dt.weekday()]
         mes_nombre = MESES_ES[dt.month-1]
         hora_formateada = interpretar_hora(hora_txt)
-        l1 = proper_elegante(f"{dia_semana} {mes_nombre} {dt.day:02d}")
-        l2 = f"de {dt.year}, {hora_formateada}"
-        return f"{l1}\n{l2}"
-    except: return f"{fecha_str}\n{hora_txt}"
+        # Retorna una sola línea sin \n
+        return proper_elegante(f"{dia_semana} {mes_nombre} {dt.day:02d} de {dt.year}, {hora_formateada}")
+    except: return f"{fecha_str}, {hora_txt}"
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
         path = tmp.name
     try:
-        # Aquí es donde LibreOffice toma el control para generar el PDF
         subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
         pdf_path = path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f: data = f.read()
@@ -73,13 +64,12 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- UI STREAMLIT ---
+# --- UI ---
 st.set_page_config(page_title="Provident Pro v2", layout="wide")
-st.title("🚀 Generador Pro: Centrado para LibreOffice")
+st.title("🚀 Generador Pro: Distribución Automática de Texto")
 
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 
-# ... (Sidebar y Carga de datos se mantienen igual) ...
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -127,16 +117,17 @@ if st.session_state.raw_records:
                         
                         lugar_corto = min([o for o in [f_punto, f_ruta] if o], key=len) if (f_punto or f_ruta) else ""
 
+                        # TODOS LOS REEMPLAZOS EN UNA SOLA LÍNEA SIN \n
                         reemplazos = {
-                            "<<Tipo>>": forzar_dos_lineas(proper_elegante(f_tipo)),
-                            "<<Confechor>>": formatear_confechor(f_fecha, f.get('Hora', '')),
-                            "<<Consuc>>": forzar_dos_lineas(proper_elegante(f"Sucursal {f_suc}, {f_muni}")),
-                            "<<Concat>>": forzar_dos_lineas(proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}")),
+                            "<<Tipo>>": proper_elegante(f_tipo),
+                            "<<Confechor>>": formatear_confechor_lineal(f_fecha, f.get('Hora', '')),
+                            "<<Consuc>>": proper_elegante(f"Sucursal {f_suc}, {f_muni}"),
+                            "<<Concat>>": proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}"),
                             "<<Sucursal>>": proper_elegante(f_suc),
                             "<<Seccion>>": str(f.get('Seccion', '')).upper()
                         }
 
-                        s_text.text(f"🖋️ Procesando {suc_actual}...")
+                        s_text.text(f"🖋️ Optimizando textos para {suc_actual}...")
                         prs = Presentation(os.path.join(folder_fisica, map_memoria[f_tipo]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
@@ -145,33 +136,34 @@ if st.session_state.raw_records:
                                     tag_encontrado = next((tag for tag in reemplazos if tag in txt_shape), None)
                                     
                                     if tag_encontrado:
-                                        # RESET PARA LIBREOFFICE: Limpiamos y re-centramos
                                         nuevo_texto = reemplazos[tag_encontrado]
                                         shape.text_frame.clear() 
                                         
                                         p = shape.text_frame.paragraphs[0]
-                                        p.alignment = PP_ALIGN.CENTER # Centrado horizontal
-                                        shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE # Centrado vertical
+                                        p.alignment = PP_ALIGN.CENTER
+                                        shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+                                        shape.text_frame.word_wrap = True # Habilita que se divida en 2 líneas si es largo
                                         
                                         run = p.add_run()
                                         run.text = nuevo_texto
                                         run.font.color.rgb = AZUL_CELESTE
                                         run.font.bold = True
                                         
-                                        # Ajuste de Tamaños (Tipo ahora igual que Confechor)
+                                        # AGRANDAR HASTA QUE OCUPE EL ESPACIO (Ajuste de jerarquía)
                                         if tag_encontrado in ["<<Confechor>>", "<<Tipo>>"]:
-                                            run.font.size = Pt(32)
+                                            run.font.size = Pt(40) # Aumentado para buscar las 2 líneas distribuidas
                                         elif tag_encontrado == "<<Sucursal>>":
                                             run.font.size = Pt(36)
+                                        elif tag_encontrado == "<<Seccion>>":
+                                            run.font.size = Pt(38)
                                         else: 
-                                            run.font.size = Pt(46)
+                                            run.font.size = Pt(48)
 
-                        # (Manejo de fotos y guardado en ZIP permanece igual)
+                        # (Manejo de fotos se mantiene igual...)
                         if modo == "Reportes":
                             for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
                                 adj = f.get(tf)
                                 if adj and isinstance(adj, list):
-                                    s_text.text(f"📸 Descargando {tf} para {suc_actual}...")
                                     r_img = requests.get(adj[0].get('url'))
                                     if r_img.status_code == 200:
                                         for slide in prs.slides:
@@ -189,5 +181,5 @@ if st.session_state.raw_records:
                             ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)}/{modo}/{proper_elegante(f_suc)}/{nom_file[:140] + ext}"
                             zip_f.writestr(ruta_zip, pdf_data if modo == "Reportes" else convert_from_bytes(pdf_data)[0].tobytes())
 
-                p_bar.progress(1.0); s_text.text("✅ ¡ZIP Generado con éxito!")
-                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_v2.zip")
+                p_bar.progress(1.0); s_text.text("✅ ¡ZIP Generado!")
+                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_Auto_Line.zip")
