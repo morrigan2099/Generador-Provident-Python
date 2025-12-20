@@ -3,5 +3,4 @@ python-pptx
 requests
 cloudinary
 Pillow
-libreoffice
-libgl1-mesa-glx
+pandas
