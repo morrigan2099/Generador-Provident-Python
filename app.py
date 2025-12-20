@@ -23,10 +23,8 @@ def proper_elegante(texto):
     excepciones = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del']
     resultado = []
     for i, p in enumerate(palabras):
-        if i > 0 and p in excepciones:
-            resultado.append(p)
-        else:
-            resultado.append(p.capitalize())
+        if i > 0 and p in excepciones: resultado.append(p)
+        else: resultado.append(p.capitalize())
     return " ".join(resultado)
 
 def formatear_fecha_mx(fecha_str):
@@ -59,10 +57,11 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- APP ---
+# --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Final: Selección y Estilo")
+st.title("🚀 Generador Pro: Texto Ampliado sin Desborde")
 
+# ... (Bloque de carga de Airtable idéntico al anterior) ...
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -79,25 +78,16 @@ with st.sidebar:
                 st.rerun()
 
 if st.session_state.raw_records:
-    # Preparar tabla visual Proper Elegante
     data_list = []
     for r in st.session_state.raw_records:
         f = r['fields']
-        data_list.append({
-            "Tipo": proper_elegante(f.get("Tipo")),
-            "Sucursal": proper_elegante(f.get("Sucursal")),
-            "Municipio": proper_elegante(f.get("Municipio")),
-            "Fecha": f.get("Fecha", "")
-        })
+        data_list.append({"Tipo": proper_elegante(f.get("Tipo")), "Sucursal": proper_elegante(f.get("Sucursal")), "Municipio": proper_elegante(f.get("Municipio")), "Fecha": f.get("Fecha", "")})
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
-    
-    st.write("### 📋 Selección de Registros")
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        st.divider()
         opcion_salida = st.radio("Tipo a generar:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, opcion_salida.upper())
         
@@ -105,8 +95,7 @@ if st.session_state.raw_records:
             archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
             tipos_unicos = df_edit.loc[sel_idx, "Tipo"].unique()
             
-            # --- BLOQUE DE SELECCIÓN DE PLANTILLAS (RESTAURADO) ---
-            st.write("### 📂 Asignación de Plantillas por Tipo")
+            st.write("### 📂 Asignación de Plantillas")
             cols = st.columns(len(tipos_unicos))
             for i, t_p in enumerate(tipos_unicos):
                 with cols[i]:
@@ -114,18 +103,16 @@ if st.session_state.raw_records:
                     if t_p in st.session_state.map_memoria:
                         if st.session_state.map_memoria[t_p] in archivos_pptx:
                             idx_mem = archivos_pptx.index(st.session_state.map_memoria[t_p])
-                    
-                    sel_p = st.selectbox(f"Plantilla para {t_p}:", archivos_pptx, index=idx_mem, key=f"s_{t_p}")
-                    st.session_state.map_memoria[t_p] = sel_p
+                    st.session_state.map_memoria[t_p] = st.selectbox(f"Tipo: {t_p}", archivos_pptx, index=idx_mem, key=f"s_{t_p}")
 
-            if st.button("🔥 GENERAR ZIP ESTRUCTURADO"):
+            if st.button("🔥 GENERAR ZIP"):
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                     for idx in sel_idx:
                         rec = st.session_state.raw_records[idx]['fields']
                         tipo_p = proper_elegante(rec.get('Tipo'))
                         
-                        # Datos para concatenación
+                        # --- LÓGICA DE DATOS ---
                         suc = str(rec.get('Sucursal') or '').strip()
                         muni = str(rec.get('Municipio') or '').strip()
                         punto = str(rec.get('Punto de reunion') or '').strip()
@@ -140,32 +127,37 @@ if st.session_state.raw_records:
                             "<<Sucursal>>": proper_elegante(suc)
                         }
 
-                        # Procesar PPTX
+                        # --- PROCESAMIENTO PPTX CON ESCALADO ---
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[tipo_p]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
                                     for paragraph in shape.text_frame.paragraphs:
-                                        # Leemos el texto completo para evitar etiquetas rotas en runs
-                                        para_text = "".join(run.text for run in paragraph.runs)
+                                        full_p_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
-                                            if tag in para_text:
-                                                # Guardamos el formato del primer run que contiene parte del tag
-                                                f_size = paragraph.runs[0].font.size
-                                                f_name = paragraph.runs[0].font.name
-                                                f_bold = paragraph.runs[0].font.bold
+                                            if tag in full_p_text:
+                                                # 1. Reemplazo
+                                                new_text = full_p_text.replace(tag, val)
+                                                # 2. Lógica de Tamaño Dinámico
+                                                longitud = len(new_text)
+                                                if tag == "<<Conhora>>":
+                                                    size = 32 # Hora siempre grande
+                                                elif tag == "<<Concat>>":
+                                                    # Escala para texto largo (Concat suele ser el más extenso)
+                                                    size = 18 if longitud < 40 else (14 if longitud < 80 else 10)
+                                                else:
+                                                    # Escala para Consuc, Confecha, Sucursal
+                                                    size = 24 if longitud < 25 else (16 if longitud < 50 else 12)
                                                 
-                                                para_text = para_text.replace(tag, val)
-                                                
-                                                # Limpiamos runs y reescribimos con formato
-                                                paragraph.runs[0].text = para_text
-                                                paragraph.runs[0].font.size = f_size
-                                                paragraph.runs[0].font.name = f_name
-                                                paragraph.runs[0].font.bold = f_bold
-                                                for r_i in range(1, len(paragraph.runs)):
-                                                    paragraph.runs[r_i].text = ""
+                                                # 3. Aplicar al Run
+                                                run = paragraph.runs[0]
+                                                run.text = new_text
+                                                run.font.size = Pt(size)
+                                                # Limpiar runs sobrantes
+                                                for i in range(1, len(paragraph.runs)):
+                                                    paragraph.runs[i].text = ""
 
-                        # Guardado y Zip
+                        # --- GUARDADO ---
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
@@ -176,12 +168,11 @@ if st.session_state.raw_records:
                             if opcion_salida == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
                             else:
-                                from pdf2image import convert_from_bytes
                                 images = convert_from_bytes(pdf_data)
                                 if images:
-                                    img_buf = BytesIO()
-                                    images[0].save(img_buf, format='PNG')
-                                    zip_f.writestr(ruta_zip, img_buf.getvalue())
+                                    img_io = BytesIO()
+                                    images[0].save(img_io, format='PNG')
+                                    zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                st.success("✅ ¡Archivos generados con éxito!")
+                st.success("✅ Generación Completada")
                 st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{opcion_salida}.zip")
