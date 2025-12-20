@@ -12,10 +12,13 @@ from pdf2image import convert_from_bytes
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 BASE_DIR = "Plantillas"
 
+# --- INICIALIZACIÓN DE ESTADOS (MEMORIA) ---
+if 'raw_records' not in st.session_state: st.session_state.raw_records = []
+if 'map_memoria' not in st.session_state: st.session_state.map_memoria = {}
+
 # --- LÓGICA PROPER ELEGANTE ---
 def proper_elegante(texto):
     if not texto: return ""
-    # Quitar acentos
     texto = ''.join(c for c in unicodedata.normalize('NFD', str(texto))
                   if unicodedata.category(c) != 'Mn')
     palabras = texto.lower().split()
@@ -68,124 +71,105 @@ def generar_png(pdf_bytes):
             return buf.getvalue()
     except: return None
 
-# --- INTERFAZ STREAMLIT ---
+# --- INTERFAZ ---
 st.set_page_config(page_title="Generador Provident Pro", layout="wide")
-st.title("🚀 Generador Masivo Proper Elegante")
-
-# Inicializar estados
-if 'raw_records' not in st.session_state: st.session_state.raw_records = []
+st.title("🚀 Generador con Memoria de Plantillas")
 
 with st.sidebar:
-    st.header("🔑 Conexión Airtable")
+    st.header("🔑 Conexión")
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
-        base_sel = st.selectbox("Selecciona Base:", list(base_opts.keys()))
-        
+        base_sel = st.selectbox("Base:", list(base_opts.keys()))
         r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
         if r_tab.status_code == 200:
             tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
-            tabla_sel = st.selectbox("Selecciona Tabla:", list(tabla_opts.keys()))
-            
-            if st.button("🔄 Cargar Registros"):
+            tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
+            if st.button("🔄 Cargar Datos"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 st.session_state.raw_records = r_reg.json().get("records", [])
                 st.rerun()
 
-# --- PROCESAMIENTO PRINCIPAL ---
 if st.session_state.raw_records:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
-    # Asegurar columnas críticas
     for c in ["Tipo", "Sucursal", "Fecha", "Hora", "Punto de reunion", "Ruta a seguir", "Municipio", "Seccion"]:
         if c not in df_full.columns: df_full[c] = ""
     
-    # Editor de selección
     df_display = df_full[["Tipo", "Sucursal", "Municipio", "Fecha"]].copy()
     df_display.insert(0, "Seleccionar", False)
-    
     df_edit = st.data_editor(df_display, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        st.divider()
-        uso_final = st.radio("¿Qué deseas generar?", ["POSTALES", "REPORTES"], horizontal=True)
+        uso_final = st.radio("Formato:", ["POSTALES", "REPORTES"], horizontal=True)
         folder = os.path.join(BASE_DIR, uso_final)
+        archivos_pptx = [f for f in os.listdir(folder) if f.endswith('.pptx')]
+        tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
         
-        if os.path.exists(folder):
-            archivos_pptx = [f for f in os.listdir(folder) if f.endswith('.pptx')]
-            tipos_seleccionados = df_edit.loc[sel_idx, "Tipo"].unique()
-            
-            # Mapeo de plantillas
-            mapping = {t: st.selectbox(f"Plantilla para {t}", archivos_pptx, key=f"m_{t}") for t in tipos_seleccionados}
+        st.write("### 📂 Asignar Plantillas por Tipo")
+        cols = st.columns(len(tipos_sel))
+        for i, t in enumerate(tipos_sel):
+            with cols[i]:
+                # Recuperar de memoria si existe, si no, el primero de la lista
+                idx_memoria = 0
+                if t in st.session_state.map_memoria:
+                    if st.session_state.map_memoria[t] in archivos_pptx:
+                        idx_memoria = archivos_pptx.index(st.session_state.map_memoria[t])
+                
+                sel_p = st.selectbox(f"Tipo: {t}", archivos_pptx, index=idx_memoria, key=f"sel_{t}")
+                st.session_state.map_memoria[t] = sel_p # GUARDAR EN MEMORIA
 
-            if st.button("🔥 GENERAR ZIP ESTRUCTURADO"):
-                zip_buf = BytesIO()
-                with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                    for idx in sel_idx:
-                        rec = st.session_state.raw_records[idx]['fields']
-                        
-                        with st.status(f"Procesando: {rec.get('Sucursal')}"):
-                            # 1. PREPARAR CONTENIDO
-                            suc = str(rec.get('Sucursal') or '').strip()
-                            muni = str(rec.get('Municipio') or '').strip()
-                            consuc_val = f"Sucursal {suc}" + (f", {muni}" if muni else "")
+        if st.button("🔥 GENERAR ZIP"):
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
+                for idx in sel_idx:
+                    rec = st.session_state.raw_records[idx]['fields']
+                    tipo_reg = rec.get('Tipo', '')
+                    
+                    with st.status(f"Procesando: {rec.get('Sucursal')}"):
+                        # 1. CONTENIDO
+                        suc = str(rec.get('Sucursal') or '').strip()
+                        muni = str(rec.get('Municipio') or '').strip()
+                        consuc_val = f"Sucursal {suc}" + (f", {muni}" if muni else "")
+                        c_partes = [str(rec.get(k) or '').strip() for k in ['Punto de reunion', 'Ruta a seguir'] if rec.get(k)]
+                        concat_txt = ", ".join(c_partes)
+                        if muni: concat_txt += f", Municipio {muni}"
+                        if rec.get('Seccion'): concat_txt += f", Seccion {rec.get('Seccion')}"
+
+                        reemplazos = {
+                            "<<Consuc>>": proper_elegante(consuc_val),
+                            "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
+                            "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
+                            "<<Concat>>": proper_elegante(concat_txt),
+                            "<<Sucursal>>": proper_elegante(suc)
+                        }
+
+                        # 2. PPTX USANDO MAPEO DE MEMORIA
+                        prs = Presentation(os.path.join(folder, st.session_state.map_memoria[tipo_reg]))
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if shape.has_text_frame:
+                                    for paragraph in shape.text_frame.paragraphs:
+                                        for run in paragraph.runs:
+                                            for tag, val in reemplazos.items():
+                                                if tag in run.text:
+                                                    run.text = run.text.replace(tag, val)
+
+                        # 3. ZIP Y CONVERSIÓN
+                        pp_io = BytesIO(); prs.save(pp_io)
+                        pdf_data = generar_pdf(pp_io.getvalue())
+                        if pdf_data:
+                            f_raw = rec.get('Fecha', '2024-01-01')
+                            try: dt = datetime.strptime(str(f_raw), '%Y-%m-%d')
+                            except: dt = datetime.now()
                             
-                            c_partes = [str(rec.get(k) or '').strip() for k in ['Punto de reunion', 'Ruta a seguir'] if rec.get(k)]
-                            concat_base = ", ".join(c_partes)
-                            concat_txt = concat_base
-                            if muni: concat_txt += f", Municipio {muni}"
-                            if rec.get('Seccion'): concat_txt += f", Seccion {rec.get('Seccion')}"
-
-                            reemplazos = {
-                                "<<Consuc>>": proper_elegante(consuc_val),
-                                "<<Confecha>>": formatear_fecha_mx(rec.get('Fecha')),
-                                "<<Conhora>>": formatear_hora_mx(rec.get('Hora')),
-                                "<<Concat>>": proper_elegante(concat_txt),
-                                "<<Sucursal>>": proper_elegante(suc)
-                            }
-
-                            # 2. PPTX
-                            prs = Presentation(os.path.join(folder, mapping[rec.get('Tipo')]))
-                            for slide in prs.slides:
-                                for shape in slide.shapes:
-                                    if shape.has_text_frame:
-                                        for paragraph in shape.text_frame.paragraphs:
-                                            for run in paragraph.runs:
-                                                for tag, val in reemplazos.items():
-                                                    if tag in run.text:
-                                                        run.text = run.text.replace(tag, val)
-                                                        # Ajuste de tamaño para Concat si es muy largo
-                                                        if tag == "<<Concat>>" and len(val) > 70:
-                                                            run.font.size = Pt(11)
-
-                            # 3. CONVERSIÓN Y RUTA ZIP
-                            pp_io = BytesIO(); prs.save(pp_io)
-                            pdf_data = generar_pdf(pp_io.getvalue())
+                            nombre_arc = proper_elegante(f"{dt.day} de {dt.month} {tipo_reg} {suc}") + (".png" if uso_final == "POSTALES" else ".pdf")
+                            path_zip = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{proper_elegante(uso_final)}/{proper_elegante(suc)}/{nombre_arc}"
                             
-                            if pdf_data:
-                                f_raw = rec.get('Fecha', '2024-01-01')
-                                try: dt = datetime.strptime(str(f_raw), '%Y-%m-%d')
-                                except: dt = datetime.now()
-                                
-                                mes_f = proper_elegante(dt.strftime('%m - %B'))
-                                ext = "png" if uso_final == "POSTALES" else "pdf"
-                                # Nombre: Día de Mes TIPO SUCURSAL
-                                nombre_arc = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc}") + f".{ext}"
-                                
-                                path_zip = (f"Provident/{dt.year}/{mes_f}/{proper_elegante(uso_final)}/"
-                                           f"{proper_elegante(suc)}/{nombre_arc}")
-                                
-                                if uso_final == "REPORTES":
-                                    zip_f.writestr(path_zip, pdf_data)
-                                else:
-                                    img = generar_png(pdf_data)
-                                    if img: zip_f.writestr(path_zip, img)
+                            if uso_final == "REPORTES": zip_f.writestr(path_zip, pdf_data)
+                            else:
+                                img = generar_png(pdf_data)
+                                if img: zip_f.writestr(path_zip, img)
 
-                st.success("✅ ¡Proceso Terminado!")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro.zip")
-        else:
-            st.error(f"No se encontró la carpeta de plantillas: {folder}")
-else:
-    st.info("Por favor, carga los registros desde la barra lateral.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro.zip")
