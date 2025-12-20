@@ -4,3 +4,4 @@ requests
 cloudinary
 Pillow
 pandas
+pdf2image
