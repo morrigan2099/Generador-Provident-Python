@@ -40,6 +40,7 @@ def formatear_confechor(fecha_str, hora_raw):
     try:
         dt = datetime.strptime(fecha_str, '%Y-%m-%d')
         hora = formatear_hora_mx(hora_raw)
+        # Línea 1: dd de Mes | Línea 2: de aaaa, hora
         linea1 = f"{dt.day:02d} de {MESES_ES[dt.month-1]}"
         linea2 = f"de {dt.year}, {hora}"
         return f"{linea1}\n{linea2}"
@@ -48,9 +49,11 @@ def formatear_confechor(fecha_str, hora_raw):
 def formatear_hora_mx(hora_raw):
     if not hora_raw: return ""
     try:
+        # Intenta parsear la hora (asumiendo formato HH:MM desde Airtable)
         t = datetime.strptime(str(hora_raw).strip(), "%H:%M")
         return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
-    except: return str(hora_raw)
+    except:
+        return str(hora_raw).lower()
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
@@ -74,7 +77,7 @@ def descargar_imagen(url):
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Provident Pro Ultra", layout="wide")
-st.title("🚀 Generador Provident: Reportes y Postales")
+st.title("🚀 Generador Provident Pro")
 
 with st.sidebar:
     st.header("Conexión Airtable")
@@ -99,7 +102,7 @@ if st.session_state.raw_records:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        modo = st.radio("Formato:", ["Postales", "Reportes"], horizontal=True)
+        modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, modo.upper())
         
         if os.path.exists(folder_fisica):
@@ -121,6 +124,7 @@ if st.session_state.raw_records:
                         suc_p = proper_elegante(f.get('Sucursal'))
                         status.info(f"Procesando: {suc_p}")
 
+                        # Textos para placeholders
                         punto = str(f.get('Punto de reunion') or '').strip()
                         ruta = str(f.get('Ruta a seguir') or '').strip()
                         muni = str(f.get('Municipio') or '').strip()
@@ -150,6 +154,7 @@ if st.session_state.raw_records:
                                         for tag, val in reemplazos.items():
                                             if tag in full_p:
                                                 new_txt = full_p.replace(tag, val)
+                                                # Tamaño de fuente dinámico
                                                 if tag == "<<confechor>>": fs = 32
                                                 elif tag == "<<Concat>>": fs = 42 if len(new_txt) < 60 else 32
                                                 else: fs = 42 if len(new_txt) < 30 else 36
@@ -161,7 +166,6 @@ if st.session_state.raw_records:
                                                     paragraph.runs[r_idx].text = ""
 
                                 if modo == "Reportes":
-                                    # Tags de fotos ampliados hasta Foto 07
                                     tags_fotos = ["<<Foto de equipo>>", "<<Foto 01>>", "<<Foto 02>>", "<<Foto 03>>", 
                                                   "<<Foto 04>>", "<<Foto 05>>", "<<Foto 06>>", "<<Foto 07>>",
                                                   "<<Reporte firmado>>", "<<Lista de asistencia>>"]
@@ -178,10 +182,12 @@ if st.session_state.raw_records:
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             dt = datetime.strptime(f.get('Fecha'), '%Y-%m-%d')
+                            # Nomenclatura archivo
                             partes_n = [p for p in [punto, ruta] if p]
                             if muni: partes_n.append(muni)
                             nom_f = f"{formatear_fecha_mx(f.get('Fecha'))} - {str(f.get('Tipo')).upper()} {str(f.get('Sucursal')).upper()} - {', '.join(partes_n)}"
                             
+                            # Recorte si el nombre es muy largo
                             if len(nom_f) > 150:
                                 res_n = [ruta] if (punto and ruta and len(punto)<len(ruta)) else ([punto] if punto else [])
                                 if muni: res_n.append(muni)
