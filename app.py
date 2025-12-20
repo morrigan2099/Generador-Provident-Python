@@ -49,7 +49,7 @@ def formatear_confechor(fecha_str, hora_raw):
 def formatear_hora_mx(hora_raw):
     if not hora_raw: return ""
     try:
-        # Intenta parsear la hora (asumiendo formato HH:MM desde Airtable)
+        # Airtable suele enviar HH:mm
         t = datetime.strptime(str(hora_raw).strip(), "%H:%M")
         return t.strftime("%I:%M %p").lower().replace("am", "a.m.").replace("pm", "p.m.")
     except:
@@ -70,12 +70,12 @@ def generar_pdf(pptx_bytes):
 
 def descargar_imagen(url):
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=15)
         if r.status_code == 200: return BytesIO(r.content)
     except: return None
     return None
 
-# --- INTERFAZ STREAMLIT ---
+# --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro Ultra", layout="wide")
 st.title("🚀 Generador Provident Pro")
 
@@ -93,7 +93,7 @@ with st.sidebar:
             if st.button("🔄 Cargar Datos"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 st.session_state.raw_records = r_reg.json().get("records", [])
-                st.success(f"Cargados {len(st.session_state.raw_records)} registros")
+                st.rerun()
 
 if st.session_state.raw_records:
     df_prev = pd.DataFrame([{"Tipo": r['fields'].get("Tipo"), "Sucursal": r['fields'].get("Sucursal"), "Fecha": r['fields'].get("Fecha")} for r in st.session_state.raw_records])
@@ -115,16 +115,16 @@ if st.session_state.raw_records:
 
             if st.button("🔥 GENERAR ARCHIVOS"):
                 progreso = st.progress(0)
-                status = st.empty()
+                status_bar = st.empty()
                 zip_buf = BytesIO()
                 
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                     for i, idx in enumerate(sel_idx):
                         f = st.session_state.raw_records[idx]['fields']
-                        suc_p = proper_elegante(f.get('Sucursal'))
-                        status.info(f"Procesando: {suc_p}")
+                        suc_raw = f.get('Sucursal')
+                        status_bar.info(f"Procesando: {suc_raw}")
 
-                        # Textos para placeholders
+                        # Preparar variables
                         punto = str(f.get('Punto de reunion') or '').strip()
                         ruta = str(f.get('Ruta a seguir') or '').strip()
                         muni = str(f.get('Municipio') or '').strip()
@@ -144,9 +144,11 @@ if st.session_state.raw_records:
                             "<<Sucursal>>": proper_elegante(f.get('Sucursal'))
                         }
 
+                        # Procesar PowerPoint
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[f.get('Tipo')]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
+                                # Lógica de Texto
                                 if shape.has_text_frame:
                                     shape.text_frame.word_wrap = True
                                     for paragraph in shape.text_frame.paragraphs:
@@ -154,7 +156,7 @@ if st.session_state.raw_records:
                                         for tag, val in reemplazos.items():
                                             if tag in full_p:
                                                 new_txt = full_p.replace(tag, val)
-                                                # Tamaño de fuente dinámico
+                                                # Tamaños de fuente
                                                 if tag == "<<confechor>>": fs = 32
                                                 elif tag == "<<Concat>>": fs = 42 if len(new_txt) < 60 else 32
                                                 else: fs = 42 if len(new_txt) < 30 else 36
@@ -165,46 +167,48 @@ if st.session_state.raw_records:
                                                 for r_idx in range(1, len(paragraph.runs)):
                                                     paragraph.runs[r_idx].text = ""
 
+                                # Lógica de Fotos (Solo Reportes)
                                 if modo == "Reportes":
                                     tags_fotos = ["<<Foto de equipo>>", "<<Foto 01>>", "<<Foto 02>>", "<<Foto 03>>", 
                                                   "<<Foto 04>>", "<<Foto 05>>", "<<Foto 06>>", "<<Foto 07>>",
                                                   "<<Reporte firmado>>", "<<Lista de asistencia>>"]
                                     for t_foto in tags_fotos:
                                         if (shape.has_text_frame and t_foto in shape.text) or (t_foto in shape.name):
-                                            campo_airtable = t_foto.replace("<<", "").replace(">>", "")
-                                            adjuntos = f.get(campo_airtable)
+                                            campo_at = t_foto.replace("<<", "").replace(">>", "")
+                                            adjuntos = f.get(campo_at)
                                             if adjuntos and isinstance(adjuntos, list):
-                                                img_data = descargar_imagen(adjuntos[0].get('url'))
-                                                if img_data:
-                                                    slide.shapes.add_picture(img_data, shape.left, shape.top, shape.width, shape.height)
+                                                img_io = descargar_imagen(adjuntos[0].get('url'))
+                                                if img_io:
+                                                    slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
 
+                        # Exportación y Guardado
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             dt = datetime.strptime(f.get('Fecha'), '%Y-%m-%d')
-                            # Nomenclatura archivo
                             partes_n = [p for p in [punto, ruta] if p]
                             if muni: partes_n.append(muni)
-                            nom_f = f"{formatear_fecha_mx(f.get('Fecha'))} - {str(f.get('Tipo')).upper()} {str(f.get('Sucursal')).upper()} - {', '.join(partes_n)}"
+                            nom_archivo = f"{formatear_fecha_mx(f.get('Fecha'))} - {str(f.get('Tipo')).upper()} {str(f.get('Sucursal')).upper()} - {', '.join(partes_n)}"
                             
-                            # Recorte si el nombre es muy largo
-                            if len(nom_f) > 150:
-                                res_n = [ruta] if (punto and ruta and len(punto)<len(ruta)) else ([punto] if punto else [])
-                                if muni: res_n.append(muni)
-                                nom_f = f"{formatear_fecha_mx(f.get('Fecha'))} - {str(f.get('Tipo')).upper()} {str(f.get('Sucursal')).upper()} - {', '.join(res_n)}"
+                            # Recorte si excede longitud
+                            if len(nom_archivo) > 150:
+                                rec_n = [ruta] if (punto and ruta and len(punto)<len(ruta)) else ([punto] if punto else [])
+                                if muni: rec_n.append(muni)
+                                nom_archivo = f"{formatear_fecha_mx(f.get('Fecha'))} - {str(f.get('Tipo')).upper()} {str(f.get('Sucursal')).upper()} - {', '.join(rec_n)}"
                             
-                            nombre_final = proper_elegante(nom_f) + (".jpg" if modo == "Postales" else ".pdf")
+                            nombre_final = proper_elegante(nom_archivo) + (".jpg" if modo == "Postales" else ".pdf")
                             folder_mes = f"{dt.month:02d} - {MESES_ES[dt.month-1]}"
-                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{modo}/{proper_elegante(f.get('Sucursal'))}/{nombre_final}"
+                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{modo}/{proper_elegante(suc_raw)}/{nombre_final}"
                             
                             if modo == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
                             else:
                                 imgs = convert_from_bytes(pdf_data)
                                 if imgs:
-                                    img_io = BytesIO()
-                                    imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85, optimize=True)
-                                    zip_f.writestr(ruta_zip, img_io.getvalue())
+                                    img_opt = BytesIO()
+                                    imgs[0].convert('RGB').save(img_opt, format='JPEG', quality=85, optimize=True)
+                                    zip_f.writestr(ruta_zip, img_opt.getvalue())
                         progreso.progress((i + 1) / len(sel_idx))
                 
+                st.success("✅ Archivos generados correctamente.")
                 st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Final.zip")
