@@ -77,9 +77,8 @@ def generar_pdf(pptx_bytes):
 
 # --- UI ---
 st.set_page_config(page_title="Provident Pro Final Fix", layout="wide")
-st.title("🚀 Generador Pro: Centrado Total y Nomenclatura Elegante")
+st.title("🚀 Generador Pro: Centrado Vertical y Auto-Ajuste")
 
-# Sidebar (Carga de datos simplificada para el ejemplo)
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -113,11 +112,19 @@ if st.session_state.raw_records:
                 st.session_state.map_memoria[t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, key=f"p_{t}")
 
             if st.button("🔥 GENERAR"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                total = len(sel_idx)
+                
                 zip_buf = BytesIO()
                 with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                    for idx in sel_idx:
+                    for i, idx in enumerate(sel_idx):
                         f = st.session_state.raw_records[idx]['fields']
+                        suc_n = str(f.get('Sucursal', 'Sucursal'))
                         
+                        status_text.text(f"⏳ Procesando {suc_n} ({i+1}/{total}) - Aplicando textos...")
+                        progress_bar.progress(i / total)
+
                         f_fecha = f.get('Fecha', '2025-01-01')
                         dt = datetime.strptime(f_fecha, '%Y-%m-%d')
                         f_suc = str(f.get('Sucursal', '')).strip()
@@ -127,11 +134,9 @@ if st.session_state.raw_records:
                         f_ruta = str(f.get('Ruta a seguir', '')).strip()
                         f_seccion = str(f.get('Seccion', '')).strip().upper()
                         
-                        # Selección de lugar corto
                         opciones = [o for o in [f_punto, f_ruta] if o]
                         lugar_corto = min(opciones, key=len) if opciones else ""
 
-                        # REEMPLAZOS
                         reemplazos = {
                             "<<Tipo>>": forzar_dos_lineas(proper_elegante(f_tipo)),
                             "<<Confechor>>": formatear_confechor(f_fecha, f.get('Hora', '')),
@@ -145,54 +150,59 @@ if st.session_state.raw_records:
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                    for paragraph in shape.text_frame.paragraphs:
-                                        # ¡ESTO ASEGURA EL CENTRADO DE CADA LÍNEA!
-                                        paragraph.alignment = PP_ALIGN.CENTER
+                                    tf = shape.text_frame
+                                    tf.vertical_anchor = MSO_ANCHOR.MIDDLE # Centrado Vertical
+                                    tf.word_wrap = True # Asegura que use el ancho del cuadro
+                                    tf.margin_top = 0 # Elimina aire extra
+                                    
+                                    for paragraph in tf.paragraphs:
+                                        paragraph.alignment = PP_ALIGN.CENTER # Centrado Horizontal
                                         
                                         full_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
                                             if tag in full_text:
-                                                # Limpiamos todos los fragmentos y dejamos solo uno con el texto nuevo
                                                 new_val = full_text.replace(tag, val)
-                                                for r in paragraph.runs:
-                                                    r.text = ""
+                                                for r in paragraph.runs: r.text = ""
                                                 run = paragraph.add_run() if not paragraph.runs else paragraph.runs[0]
                                                 run.text = new_val
                                                 run.font.color.rgb = AZUL_CELESTE
                                                 run.font.bold = True
                                                 
+                                                # AJUSTE DE TAMAÑO MÁXIMO
                                                 if tag == "<<Confechor>>": run.font.size = Pt(32)
-                                                elif tag in ["<<Sucursal>>", "<<Seccion>>"]: run.font.size = Pt(38)
-                                                else: run.font.size = Pt(46)
+                                                elif tag == "<<Sucursal>>": run.font.size = Pt(36) # 2 puntos menos
+                                                elif tag == "<<Seccion>>": run.font.size = Pt(38)
+                                                else: run.font.size = Pt(46) # Empezamos en 46 para Tipo y Concat
 
-                                # Fotos
-                                if modo == "Reportes":
-                                    tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
-                                    for tf in tags_f:
-                                        if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
-                                            adj = f.get(tf)
-                                            if adj and isinstance(adj, list):
-                                                r_img = requests.get(adj[0].get('url'))
-                                                if r_img.status_code == 200:
+                        if modo == "Reportes":
+                            tags_f = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
+                            for tf in tags_f:
+                                adj = f.get(tf)
+                                if adj and isinstance(adj, list):
+                                    status_text.text(f"📸 Descargando {tf} para {suc_n}...")
+                                    r_img = requests.get(adj[0].get('url'))
+                                    if r_img.status_code == 200:
+                                        for slide in prs.slides:
+                                            for shape in slide.shapes:
+                                                if (shape.has_text_frame and f"<<{tf}>>" in shape.text) or (tf in shape.name):
                                                     slide.shapes.add_picture(BytesIO(r_img.content), shape.left, shape.top, shape.width, shape.height)
 
+                        status_text.text(f"⚙️ Finalizando formato de {suc_n}...")
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            # NOMENCLATURA EN PROPER ELEGANTE
-                            # Formato: Mes Dd de Aaaa - Lugar, Municipio - Tipo, Sucursal.pdf
-                            fecha_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year}")
-                            lugar_nom = proper_elegante(lugar_corto)
-                            muni_nom = proper_elegante(f_muni)
-                            tipo_nom = proper_elegante(f_tipo)
-                            suc_nom = proper_elegante(f_suc)
+                            # Nomenclatura Proper Elegante
+                            f_nom = proper_elegante(f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year}")
+                            l_nom = proper_elegante(lugar_corto)
+                            m_nom = proper_elegante(f_muni)
+                            t_nom = proper_elegante(f_tipo)
+                            s_nom = proper_elegante(f_suc)
                             
-                            nom_archivo = f"{fecha_nom} - {lugar_nom}, {muni_nom} - {tipo_nom}, {suc_nom}"
+                            nom_file = f"{f_nom} - {l_nom}, {m_nom} - {t_nom}, {s_nom}"
                             ext = ".pdf" if modo == "Reportes" else ".jpg"
-                            nom_archivo = nom_archivo[:140] + ext
+                            nom_file = nom_file[:140] + ext
                             
-                            ruta_zip = f"Provident/{dt.year}/{dt.month:02d}/{modo}/{suc_nom}/{nom_archivo}"
+                            ruta_zip = f"Provident/{dt.year}/{dt.month:02d}/{modo}/{s_nom}/{nom_file}"
                             
                             if modo == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
@@ -201,6 +211,7 @@ if st.session_state.raw_records:
                                 if imgs:
                                     img_io = BytesIO(); imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
-
-                st.success("✅ Generación lista con centrado forzado y nombres en Proper Elegante.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Correcto.zip")
+                
+                progress_bar.progress(1.0)
+                status_text.text("✅ Proceso terminado exitosamente.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Final.zip")
