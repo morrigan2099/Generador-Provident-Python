@@ -8,13 +8,10 @@ import json
 import subprocess
 import tempfile
 from pdf2image import convert_from_bytes
-import cloudinary
-import cloudinary.uploader
 
-# --- CONFIGURACIÓN DE ARCHIVOS ---
+# --- CONFIGURACIÓN DE ARCHIVOS Y ESTADO ---
 CONFIG_FILE = "config_plantillas.json"
 
-# Cargar mapeo de plantillas desde JSON
 if 'mapping' not in st.session_state:
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
@@ -35,55 +32,62 @@ def procesar_pptx(plantilla_bytes, fields):
                         for key, value in fields.items():
                             tag = f"{{{{{key}}}}}"
                             if tag in run.text:
-                                # Manejo de valores nulos o listas
-                                val_str = str(value) if value and not isinstance(value, list) else ""
+                                # Limpieza básica de datos de Airtable
+                                if isinstance(value, list): # Caso de adjuntos
+                                    val_str = ", ".join([f.get("filename", "") for f in value])
+                                else:
+                                    val_str = str(value) if value else ""
                                 run.text = run.text.replace(tag, val_str)
     out = BytesIO()
     prs.save(out)
     return out.getvalue()
 
 def generar_pdf(pptx_bytes):
-    """Convierte PPTX a PDF usando LibreOffice"""
+    """Convierte PPTX a PDF usando LibreOffice (soffice)"""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
         tmp_path = tmp.name
     
     try:
+        # Comando para Streamlit Cloud
         subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', 
                         '--outdir', os.path.dirname(tmp_path), tmp_path], check=True)
         pdf_path = tmp_path.replace(".pptx", ".pdf")
         with open(pdf_path, "rb") as f:
             pdf_data = f.read()
         os.remove(tmp_path)
-        os.remove(pdf_path)
+        if os.path.exists(pdf_path): os.remove(pdf_path)
         return pdf_data
     except Exception as e:
-        st.error(f"Error en PDF: {e}")
+        st.error(f"Error en conversión PDF: {e}")
         return None
 
 def generar_png(pdf_bytes):
-    """Convierte la primera página del PDF a PNG"""
+    """Convierte la primera diapositiva (del PDF) a imagen PNG"""
     try:
-        # Convertir PDF a lista de imágenes de PIL
         images = convert_from_bytes(pdf_bytes)
         if images:
             img_byte_arr = BytesIO()
             images[0].save(img_byte_arr, format='PNG')
             return img_byte_arr.getvalue()
     except Exception as e:
-        st.error(f"Error en PNG: {e}")
+        st.error(f"Error en conversión PNG: {e}")
         return None
 
-# --- INTERFAZ STREAMLIT ---
-st.set_page_config(page_title="Generador Provident", layout="wide")
-st.title("🚀 Generador de Postales (PNG) y Reportes (PDF)")
+# --- INTERFAZ ---
+st.set_page_config(page_title="Generador Provident Pro", layout="wide")
+st.title("🚀 Generador de Postales y Reportes")
 
-# [Aquí iría tu lógica de Sidebar para conectar Airtable que ya definimos]
-# Supongamos que ya tenemos st.session_state.df_trabajo cargado...
+# [Aquí iría tu lógica de Sidebar para cargar registros de Airtable definida antes]
 
 if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
     
-    # Tabla con Checkboxes
+    # 1. TABLA DE SELECCIÓN
+    st.subheader("1. Selección de Registros")
+    c1, c2 = st.columns([1, 5])
+    if c1.button("✅ Todo"): st.session_state.df_trabajo["Seleccionar"] = True; st.rerun()
+    if c1.button("❌ Nada"): st.session_state.df_trabajo["Seleccionar"] = False; st.rerun()
+
     df_editado = st.data_editor(
         st.session_state.df_trabajo,
         use_container_width=True,
@@ -95,59 +99,62 @@ if not st.session_state.get('df_trabajo', pd.DataFrame()).empty:
     seleccionados = df_editado[df_editado["Seleccionar"] == True]
 
     if not seleccionados.empty:
+        st.divider()
+        
+        # 2. CONFIGURACIÓN DE PLANTILLAS POR TIPO
         tipos_en_seleccion = seleccionados["Tipo"].unique()
+        st.subheader("2. Configuración de Plantillas")
         
-        # --- GESTIÓN DE PLANTILLAS POR TIPO ---
-        st.subheader("📁 Configuración de Plantillas por Tipo")
-        config_completa = True
-        
+        config_ok = True
         for t in tipos_en_seleccion:
-            if t not in st.session_state.mapping:
-                st.warning(f"No hay plantilla para el tipo: **{t}**")
-                file = st.file_uploader(f"Subir PPTX para {t}", type="pptx", key=f"p_{t}")
+            if t not in st.session_state.mapping or not os.path.exists(st.session_state.mapping[t]):
+                st.warning(f"Falta plantilla para el tipo: **{t}**")
+                file = st.file_uploader(f"Subir PPTX para el tipo '{t}'", type="pptx", key=f"p_{t}")
                 if file:
-                    # Guardar archivo localmente
                     p_path = f"plantilla_{t}.pptx"
                     with open(p_path, "wb") as f:
                         f.write(file.getbuffer())
                     st.session_state.mapping[t] = p_path
                     with open(CONFIG_FILE, 'w') as f:
                         json.dump(st.session_state.mapping, f)
+                    st.success(f"Plantilla para {t} guardada.")
                     st.rerun()
-                config_completa = False
+                config_ok = False
         
-        if config_completa:
-            if st.button("🔥 GENERAR TODO"):
-                for _, fila in seleccionados.iterrows():
-                    with st.expander(f"Procesando: {fila['Sucursal']}", expanded=True):
-                        # 1. Cargar plantilla según tipo
+        if config_ok:
+            st.success("✅ Todas las plantillas están vinculadas.")
+            
+            # 3. SELECCIÓN DE FORMATO FINAL
+            st.divider()
+            st.subheader("3. Formato de Salida")
+            formato = st.radio("¿Qué deseas generar?", ["🖼️ Postales (PNG)", "📄 Reportes (PDF)", "🔄 Ambos (PNG y PDF)"], horizontal=True)
+
+            if st.button("🔥 INICIAR PROCESAMIENTO MASIVO"):
+                for idx, fila in seleccionados.iterrows():
+                    with st.status(f"Procesando: {fila['Sucursal']} ({fila['Tipo']})", expanded=False) as status:
+                        
+                        # Obtener plantilla
                         path_p = st.session_state.mapping[fila["Tipo"]]
                         with open(path_p, "rb") as f:
                             p_bytes = f.read()
                         
-                        # 2. Generar PPTX con datos
+                        # Procesar PowerPoint en memoria
                         pptx_res = procesar_pptx(p_bytes, fila.to_dict())
                         
-                        # 3. Generar PDF (Base para ambos)
+                        # Generar PDF (base para ambos formatos)
                         pdf_res = generar_pdf(pptx_res)
                         
                         if pdf_res:
-                            col1, col2 = st.columns(2)
+                            st.write(f"✅ Archivos listos para {fila['Sucursal']}")
+                            col_a, col_b = st.columns(2)
                             
-                            # Opción Reporte (PDF)
-                            col1.download_button(
-                                "📄 Descargar PDF (Reporte)", 
-                                pdf_res, 
-                                f"Reporte_{fila['Sucursal']}.pdf", 
-                                mime="application/pdf"
-                            )
+                            # Lógica según selección de formato
+                            if "PDF" in formato or "Ambos" in formato:
+                                col_a.download_button(f"📥 PDF - {fila['Sucursal']}", pdf_res, f"Reporte_{fila['Sucursal']}.pdf", key=f"pdf_{idx}")
                             
-                            # Opción Postal (PNG)
-                            png_res = generar_png(pdf_res)
-                            if png_res:
-                                col2.download_button(
-                                    "🖼️ Descargar PNG (Postal)", 
-                                    png_res, 
-                                    f"Postal_{fila['Sucursal']}.png", 
-                                    mime="image/png"
-                                )
+                            if "PNG" in formato or "Ambos" in formato:
+                                png_res = generar_png(pdf_res)
+                                if png_res:
+                                    col_b.download_button(f"📥 PNG - {fila['Sucursal']}", png_res, f"Postal_{fila['Sucursal']}.png", key=f"png_{idx}")
+                        
+                        status.update(label=f"Completado: {fila['Sucursal']}", state="complete")
