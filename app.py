@@ -6,7 +6,7 @@ import os
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_VERTICAL_ANCHOR
+from pptx.enum.text import PP_ALIGN
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
@@ -61,8 +61,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v21", layout="wide")
-st.title("🚀 Generador Pro: Fuente 11pt Real (Sin AutoFit)")
+st.set_page_config(page_title="Provident Pro v22", layout="wide")
+st.title("🚀 Generador Pro: Formato 11/14pts y Hora minúscula")
 
 with st.sidebar:
     st.header("🔌 Conexión Airtable")
@@ -122,9 +122,7 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
 
     df_edit = st.data_editor(
         df_display,
-        column_config={
-            "Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False, required=True)
-        },
+        column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False, required=True)},
         use_container_width=True,
         hide_index=True
     )
@@ -163,7 +161,8 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                     status.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
                     p_bar.progress((i + 1) / total)
 
-                    hora_f = str(record.get('Hora', '')).strip()
+                    # HORA SIEMPRE MINÚSCULAS
+                    hora_f = str(record.get('Hora', '')).strip().lower()
                     confechor = f"{DIAS_ES[dt.weekday()]} {MESES_ES[dt.month-1]} {str(dt.day).zfill(2)} de {dt.year}, {hora_f}"
                     concat_val = ", ".join([p for p in [f_punto if f_punto else f_ruta, f_muni] if p])
 
@@ -179,18 +178,22 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        # ACCIÓN CRÍTICA: Desactivar AutoFit para forzar 11pt
-                                        text_frame = shape.text_frame
-                                        text_frame.auto_size = None # Elimina ajuste automático
-                                        text_frame.clear()
+                                        tf = shape.text_frame
+                                        tf.auto_size = None # Bloquear AutoFit
+                                        tf.clear()
                                         
-                                        p = text_frame.paragraphs[0]
+                                        p = tf.paragraphs[0]
                                         p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run()
                                         run.text = val
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11) # FORZADO A 11PT
+                                        
+                                        # REGLA: Tipo y Sucursal 14pts, otros 11pts
+                                        if tag in ["<<Tipo>>", "<<Sucursal>>"]:
+                                            run.font.size = Pt(14)
+                                        else:
+                                            run.font.size = Pt(11)
 
                     if modo == "Reportes":
                         tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
@@ -218,5 +221,5 @@ if 'raw_records' in st.session_state and st.session_state.raw_records:
                         contenido = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                         zip_f.writestr(ruta_zip, contenido)
 
-            status.success(f"✅ ¡Completado! {total} archivos generados.")
-            st.download_button("📥 Descargar Zip", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
+            status.success(f"✅ ¡Completado! Registros a 11/14pts.")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M')}.zip", use_container_width=True)
