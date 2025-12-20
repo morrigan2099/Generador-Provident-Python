@@ -15,6 +15,10 @@ BASE_DIR = "Plantillas"
 if 'raw_records' not in st.session_state: st.session_state.raw_records = []
 if 'map_memoria' not in st.session_state: st.session_state.map_memoria = {}
 
+# Diccionario de meses para control total en español
+MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
 def proper_elegante(texto):
     if not texto or str(texto).lower() == "none": return ""
     texto = ''.join(c for c in unicodedata.normalize('NFD', str(texto))
@@ -30,10 +34,7 @@ def proper_elegante(texto):
 def formatear_fecha_mx(fecha_str):
     try:
         dt = datetime.strptime(fecha_str, '%Y-%m-%d')
-        meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", 
-                 "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
-        res = f"{dias[dt.weekday()]} {dt.day} de {meses[dt.month-1]} de {dt.year}"
+        res = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year}"
         return proper_elegante(res)
     except: return ""
 
@@ -59,7 +60,7 @@ def generar_pdf(pptx_bytes):
 
 # --- INTERFAZ ---
 st.set_page_config(page_title="Provident Pro", layout="wide")
-st.title("🚀 Generador Pro: Texto Continuo y Gigante")
+st.title("🚀 Generador Pro: Fechas y Carpetas en Español")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -77,7 +78,6 @@ with st.sidebar:
                 st.rerun()
 
 if st.session_state.raw_records:
-    # Tabla visual proper elegante
     data_list = [{"Tipo": proper_elegante(r['fields'].get("Tipo")), "Sucursal": proper_elegante(r['fields'].get("Sucursal")), "Municipio": proper_elegante(r['fields'].get("Municipio")), "Fecha": r['fields'].get("Fecha", "")} for r in st.session_state.raw_records]
     df_display = pd.DataFrame(data_list)
     df_display.insert(0, "Seleccionar", False)
@@ -86,7 +86,7 @@ if st.session_state.raw_records:
 
     if sel_idx:
         st.divider()
-        op_salida = st.radio("Reportes / Postales (tipo a generar):", ["Postales", "Reportes"], horizontal=True)
+        op_salida = st.radio("Tipo a generar:", ["Postales", "Reportes"], horizontal=True)
         folder_fisica = os.path.join(BASE_DIR, op_salida.upper())
         
         if os.path.exists(folder_fisica):
@@ -117,13 +117,12 @@ if st.session_state.raw_records:
                         progreso_bar.progress((i + 1) / total)
                         status_text.info(f"🔨 Generando: **{proper_elegante(suc_raw)}**")
 
-                        # --- LOGICA DE DATOS (CONTINUO) ---
+                        # --- DATOS ---
                         punto = str(rec.get('Punto de reunion') or '').strip()
                         ruta = str(rec.get('Ruta a seguir') or '').strip()
                         muni = str(rec.get('Municipio') or '').strip()
                         secc = str(rec.get('Seccion') or '').strip()
 
-                        # Texto continuo con comas (sin saltos manuales)
                         concat_raw = ", ".join([p for p in [punto, ruta] if p])
                         if muni: concat_raw += f", Municipio {muni}"
                         if secc: concat_raw += f", Seccion {secc}"
@@ -136,28 +135,20 @@ if st.session_state.raw_records:
                             "<<Sucursal>>": proper_elegante(suc_raw)
                         }
 
-                        # --- PROCESAMIENTO PPTX (TEXTO GIGANTE PARA FORZAR LINEAS) ---
+                        # --- PROCESAMIENTO ---
                         prs = Presentation(os.path.join(folder_fisica, st.session_state.map_memoria[proper_elegante(rec.get('Tipo'))]))
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
-                                    shape.text_frame.word_wrap = True # Permitir multilínea automática
+                                    shape.text_frame.word_wrap = True
                                     for paragraph in shape.text_frame.paragraphs:
                                         full_p = "".join(r.text for r in paragraph.runs)
                                         for tag, val in reemplazos.items():
                                             if tag in full_p:
                                                 new_txt = full_p.replace(tag, val)
-                                                
-                                                # SI ES CONCAT, FORZAMOS TAMAÑO GIGANTE (42pt o 38pt)
-                                                if tag == "<<Concat>>":
-                                                    # Si el texto es corto, 42pt lo hará ver gigante.
-                                                    # Si es largo, 38pt forzará las 4 o más líneas.
-                                                    size = 42 if len(new_txt) < 50 else 38
-                                                elif tag == "<<Conhora>>":
-                                                    size = 42
-                                                else:
-                                                    # Consuc y Fecha
-                                                    size = 42 if len(new_txt) < 30 else 32
+                                                if tag == "<<Concat>>": size = 42 if len(new_txt) < 50 else 38
+                                                elif tag == "<<Conhora>>": size = 42
+                                                else: size = 42 if len(new_txt) < 30 else 32
                                                 
                                                 run = paragraph.runs[0]
                                                 run.text = new_txt
@@ -165,13 +156,21 @@ if st.session_state.raw_records:
                                                 for r_idx in range(1, len(paragraph.runs)):
                                                     paragraph.runs[r_idx].text = ""
 
-                        # --- GUARDADO ---
+                        # --- GUARDADO Y RUTA FINAL ---
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
                             dt = datetime.strptime(str(rec.get('Fecha', '2024-01-01')), '%Y-%m-%d')
-                            nombre = proper_elegante(f"{dt.day} de {dt.month} {rec.get('Tipo')} {suc_raw}") + (".png" if op_salida == "Postales" else ".pdf")
-                            ruta_zip = f"Provident/{dt.year}/{proper_elegante(dt.strftime('%m - %B'))}/{op_salida}/{proper_elegante(suc_raw)}/{nombre}"
+                            
+                            # 1. Carpeta con Mes en Español (ej: 11 - Noviembre)
+                            nombre_mes = MESES_ES[dt.month-1]
+                            folder_mes = f"{dt.month:02d} - {nombre_mes}"
+                            
+                            # 2. Nombre de archivo con Cero Inicial (ej: 09 de Noviembre de 2025)
+                            nombre_archivo = f"{dt.day:02d} de {nombre_mes} de {dt.year} {rec.get('Tipo')} {suc_raw}"
+                            nombre_final = proper_elegante(nombre_archivo) + (".png" if op_salida == "Postales" else ".pdf")
+                            
+                            ruta_zip = f"Provident/{dt.year}/{folder_mes}/{op_salida}/{proper_elegante(suc_raw)}/{nombre_final}"
                             
                             if op_salida == "Reportes":
                                 zip_f.writestr(ruta_zip, pdf_data)
@@ -182,5 +181,5 @@ if st.session_state.raw_records:
                                     imgs[0].save(img_io, format='PNG')
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                status_text.success("✅ Generación finalizada.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{op_salida}.zip")
+                status_text.success("✅ Generación finalizada exitosamente.")
+                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_Final.zip")
