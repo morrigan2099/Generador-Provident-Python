@@ -35,6 +35,7 @@ def proper_elegante(texto):
     return " ".join(resultado)
 
 def forzar_dos_lineas(texto):
+    """Aplica salto de línea solo si no es Sucursal"""
     if not texto or "\n" in texto: return texto
     palabras = texto.split()
     if len(palabras) < 2: return texto
@@ -76,8 +77,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro Final", layout="wide")
-st.title("🚀 Generador Pro: Sección en Mayúsculas")
+st.set_page_config(page_title="Provident Pro v2", layout="wide")
+st.title("🚀 Generador Pro: Centrado Horizontal y Proper Elegante")
 
 with st.sidebar:
     headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -123,19 +124,19 @@ if st.session_state.raw_records:
                         f_muni = str(f.get('Municipio', '')).strip()
                         f_punto = str(f.get('Punto de reunion', '')).strip()
                         f_ruta = str(f.get('Ruta a seguir', '')).strip()
-                        # CAMPO SECCIÓN FORZADO A MAYÚSCULAS
                         f_seccion = str(f.get('Seccion', '')).strip().upper()
+                        f_tipo = str(f.get('Tipo', '')).strip()
                         
                         opciones = [o for o in [f_punto, f_ruta] if o]
                         lugar_corto = min(opciones, key=len) if opciones else ""
 
-                        # REEMPLAZOS
+                        # REEMPLAZOS CON LÓGICA DE PROPER Y LÍNEAS
                         reemplazos = {
-                            "<<Tipo>>": forzar_dos_lineas(str(f.get('Tipo', '')).upper()),
+                            "<<Tipo>>": forzar_dos_lineas(proper_elegante(f_tipo)),
                             "<<Confechor>>": formatear_confechor(f_fecha, f.get('Hora', '')),
                             "<<Consuc>>": forzar_dos_lineas(proper_elegante(f"Sucursal {f_suc}, {f_muni}")),
                             "<<Concat>>": forzar_dos_lineas(proper_elegante(f"{f_punto}, {f_ruta}, {f_muni}")),
-                            "<<Sucursal>>": forzar_dos_lineas(proper_elegante(f_suc)),
+                            "<<Sucursal>>": proper_elegante(f_suc), # Una sola línea
                             "<<Seccion>>": f_seccion 
                         }
 
@@ -143,9 +144,12 @@ if st.session_state.raw_records:
                         for slide in prs.slides:
                             for shape in slide.shapes:
                                 if shape.has_text_frame:
+                                    # Alineación Vertical
                                     shape.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
                                     for paragraph in shape.text_frame.paragraphs:
+                                        # Alineación Horizontal (CENTRO)
                                         paragraph.alignment = PP_ALIGN.CENTER
+                                        
                                         full_text = "".join(run.text for run in paragraph.runs)
                                         for tag, val in reemplazos.items():
                                             if tag in full_text:
@@ -155,9 +159,8 @@ if st.session_state.raw_records:
                                                 run.text = new_val
                                                 run.font.color.rgb = AZUL_CELESTE
                                                 run.font.bold = True
-                                                # Tamaño según tag
+                                                
                                                 if tag == "<<Confechor>>": run.font.size = Pt(32)
-                                                elif tag == "<<Seccion>>": run.font.size = Pt(38)
                                                 elif tag == "<<Sucursal>>": run.font.size = Pt(38)
                                                 else: run.font.size = Pt(46)
 
@@ -174,8 +177,8 @@ if st.session_state.raw_records:
                         pp_io = BytesIO(); prs.save(pp_io)
                         pdf_data = generar_pdf(pp_io.getvalue())
                         if pdf_data:
-                            # Nomenclatura del archivo final
-                            nom_archivo = f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year} - {str(f.get('Tipo')).upper()}, {f_suc.upper()} - {lugar_corto.upper()}, {f_muni.upper()}"
+                            # Nomenclatura del archivo
+                            nom_archivo = f"{MESES_ES[dt.month-1]} {dt.day:02d} de {dt.year} - {f_tipo.upper()}, {f_suc.upper()} - {lugar_corto.upper()}, {f_muni.upper()}"
                             nom_archivo = nom_archivo[:140] + (".pdf" if modo == "Reportes" else ".jpg")
                             
                             folder_mes = f"{dt.month:02d} - {MESES_ES[dt.month-1]}"
@@ -189,5 +192,5 @@ if st.session_state.raw_records:
                                     img_io = BytesIO(); imgs[0].convert('RGB').save(img_io, format='JPEG', quality=85)
                                     zip_f.writestr(ruta_zip, img_io.getvalue())
 
-                st.success("✅ Generación lista. Campo SECCION en mayúsculas y resto en Proper Elegante.")
-                st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_Final.zip")
+                st.success("✅ ¡Hecho! Tipo en Proper Elegante y Sucursal a una línea.")
+                st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_v2.zip")
