@@ -26,7 +26,7 @@ def cargar_config():
     return {
         "plantillas": {}, 
         "tamanos": {
-            "<<Tipo>>": 11,
+            "<<Tipo>>": 13,
             "<<Sucursal>>": 11,
             "<<Seccion>>": 11,
             "<<Confechor>>": 11,
