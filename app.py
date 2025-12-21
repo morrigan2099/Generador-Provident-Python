@@ -48,16 +48,12 @@ def procesar_texto_maestro(texto, campo=""):
     texto_limpio = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
     
     # 2. LIMPIEZA DE TEXTO PLANO (Saltos de línea y dobles espacios)
-    texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ') # Quitar saltos
-    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip() # Colapsar espacios múltiples
+    texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
+    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
     
-    # REGLA: Hora siempre minúscula
-    if campo == 'Hora':
-        return texto_limpio
-    
-    # REGLA: Seccion siempre mayúscula
-    if campo == 'Seccion':
-        return texto_limpio.upper()
+    # REGLAS ESPECIALES
+    if campo == 'Hora': return texto_limpio
+    if campo == 'Seccion': return texto_limpio.upper()
 
     # 3. ALGORITMO PROPER ELEGANTE
     pequenas = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
@@ -72,17 +68,13 @@ def procesar_texto_maestro(texto, campo=""):
         forzar_mayuscula = False
         if i == 0: forzar_mayuscula = True
         else:
-            # Buscar si el delimitador anterior fue punto o paréntesis
             previo = "".join(tokens[:i]).strip()
             if previo.endswith('.') or previo.endswith('('):
                 forzar_mayuscula = True
         
-        if forzar_mayuscula:
-            resultado.append(t.capitalize())
-        elif t in pequenas:
-            resultado.append(t.lower())
-        else:
-            resultado.append(t.capitalize())
+        if forzar_mayuscula: resultado.append(t.capitalize())
+        elif t in pequenas: resultado.append(t.lower())
+        else: resultado.append(t.capitalize())
             
     return "".join(resultado)
 
@@ -99,8 +91,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v27", layout="wide")
-st.title("🚀 Generador Pro: Texto Plano + Cero Saltos de Línea")
+st.set_page_config(page_title="Provident Pro v28", layout="wide")
+st.title("🚀 Generador Pro: Barra de Progreso y Texto Plano")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -126,13 +118,12 @@ with st.sidebar:
                 procesados = []
                 for r in raw:
                     f = r['fields']
-                    # Limpieza integral desde la entrada
                     row_limpio = {k: procesar_texto_maestro(v, k) if k != 'Fecha' else v for k, v in f.items()}
                     procesados.append({'id': r['id'], 'fields': row_limpio})
                 st.session_state.raw_records = procesados
                 st.rerun()
 
-# --- FLUJO ---
+# --- FLUJO PRINCIPAL ---
 modo = st.radio("1. Acción:", ["Postales", "Reportes"], horizontal=True)
 folder_fisica = os.path.join("Plantillas", modo.upper())
 AZUL_CELESTE = RGBColor(0, 176, 240)
@@ -148,32 +139,36 @@ if 'raw_records' in st.session_state:
     
     df = pd.DataFrame(rows_display)
     df.insert(0, "Seleccionar", False)
-    st.subheader("2. Tabla de Datos (Texto Plano Limpio)")
     df_edit = st.data_editor(df, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
-        st.subheader("3. Vinculación")
+        st.subheader("2. Vinculación")
         for t in tipos_sel:
             p_mem = st.session_state.config["plantillas"].get(t)
             idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
             st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla para {t}:", archivos_pptx, index=idx_def, key=t)
 
         if st.button("🔥 GENERAR ARCHIVOS", use_container_width=True, type="primary"):
+            p_bar = st.progress(0) # BARRA RESTAURADA
+            status_text = st.empty() # DETALLE RESTAURADO
             zip_buf = BytesIO()
+            total = len(sel_idx)
+            
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                for idx in sel_idx:
+                for i, idx in enumerate(sel_idx):
                     record = st.session_state.raw_records[idx]['fields']
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
+                    status_text.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
+                    
                     f_seccion = record.get('Seccion'); f_muni = record.get('Municipio')
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
                     hora = record.get('Hora')
                     
-                    # Confechor y Concat procesados nuevamente para asegurar integridad
                     conf_raw = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {hora}"
                     f_confechor = procesar_texto_maestro(conf_raw)
                     f_concat = procesar_texto_maestro(f"{lugar}, {f_muni}")
@@ -189,8 +184,6 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        
-                                        # JERARQUÍA DE FUENTES
                                         if tag == "<<Tipo>>": run.font.size = Pt(64)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
@@ -200,9 +193,10 @@ if 'raw_records' in st.session_state:
                     data_out = generar_pdf(pp_io.getvalue())
                     if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
-                        mes_folder = f"{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}"
-                        ruta_zip = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
+                        ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
+                    
+                    p_bar.progress((i + 1) / total)
             
-            st.success("✅ ¡Proceso terminado con éxito!")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Pro_v27.zip", use_container_width=True)
+            status_text.success(f"✅ ¡{total} archivos generados con éxito!")
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Final.zip", use_container_width=True)
