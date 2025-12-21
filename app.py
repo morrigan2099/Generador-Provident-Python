@@ -13,7 +13,7 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
-# --- CONFIGURACIÓN DE TAMAÑOS ---
+# --- CONFIGURACIÓN DE TAMAÑOS (EDITAR AQUÍ) ---
 TAM_TIPO      = 11
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
@@ -31,12 +31,12 @@ def cargar_config():
         except: pass
     return {"plantillas": {}}
 
-def obtener_url_alta_calidad(adjunto):
-    """Extrae la versión 'large' de Airtable si existe, si no, la original."""
+def obtener_url_full_calidad(adjunto):
+    """Extrae la versión 'full' de Airtable para evitar pixelado."""
     if not adjunto: return None
     thumbnails = adjunto[0].get('thumbnails', {})
-    # Priorizar 'large' para evitar pixelado, si no, usar la URL original (full)
-    return thumbnails.get('large', {}).get('url') or adjunto[0].get('url')
+    # Prioridad: full -> large -> original url
+    return thumbnails.get('full', {}).get('url') or thumbnails.get('large', {}).get('url') or adjunto[0].get('url')
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
@@ -62,14 +62,13 @@ def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
     target_w = max(1, int(target_w_pt / 9525))
     target_h = max(1, int(target_h_pt / 9525))
     img = Image.open(BytesIO(img_data)).convert("RGB")
-    # Filtro LANCZOS para máxima nitidez al redimensionar
     fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
     fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
     img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
     offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
     fondo.paste(img, offset)
     output = BytesIO()
-    fondo.save(output, format="JPEG", quality=100) # Calidad máxima
+    fondo.save(output, format="JPEG", quality=100)
     output.seek(0)
     return output
 
@@ -86,10 +85,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v61", layout="wide")
+st.set_page_config(page_title="Provident Pro v62", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v61 - Alta Calidad")
+st.title("🚀 Generador Pro v62")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -145,7 +144,9 @@ if 'raw_records' in st.session_state:
             st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=f"p_{t}")
 
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
-            p_bar = st.progress(0); zip_buf = BytesIO()
+            p_bar = st.progress(0)
+            status_text = st.empty() # Línea descriptiva vacía
+            zip_buf = BytesIO()
             AZUL_CELESTE = RGBColor(0, 176, 240)
             mapa_tamanos = {"<<Tipo>>": TAM_TIPO, "<<Sucursal>>": TAM_SUCURSAL, "<<Seccion>>": TAM_SECCION, "<<Confechor>>": TAM_CONFECHOR, "<<Concat>>": TAM_CONCAT}
 
@@ -158,6 +159,9 @@ if 'raw_records' in st.session_state:
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
                     f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
+                    
+                    # ACTUALIZAR TEXTO DESCRIPTIVO
+                    status_text.markdown(f"**Procesando ({i+1}/{total_items}):** `{nom_arch}`")
                     
                     reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
                                   "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
@@ -179,17 +183,16 @@ if 'raw_records' in st.session_state:
                                 for tf in tags_foto:
                                     if f"<<{tf}>>" in shape.text_frame.text:
                                         adj_data = record_orig.get(tf)
-                                        url_hd = obtener_url_alta_calidad(adj_data)
+                                        url_hd = obtener_url_full_calidad(adj_data)
                                         if url_hd:
                                             try:
                                                 r_img_bytes = requests.get(url_hd).content
-                                                if s_idx >= 2: # STRETCH EN PAG 3 Y 4
+                                                if s_idx >= 2:
                                                     img_io = BytesIO(r_img_bytes)
                                                     slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
-                                                else: # BLUR EN PAG 1 Y 2
+                                                else:
                                                     img_final_io = crear_imagen_con_fondo_blur(r_img_bytes, shape.width, shape.height)
                                                     slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
-                                                
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
 
@@ -209,4 +212,6 @@ if 'raw_records' in st.session_state:
                         ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     if total_items > 0: p_bar.progress((i + 1) / total_items)
+            
+            status_text.success(f"✅ ¡Completado! {total_items} archivos procesados.")
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
