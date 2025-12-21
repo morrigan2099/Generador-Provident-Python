@@ -22,7 +22,17 @@ def cargar_config():
         try:
             with open("config_app.json", "r") as f: return json.load(f)
         except: pass
-    return {"plantillas": {}, "columnas_visibles": []}
+    # Default: Todos a 11pts
+    return {
+        "plantillas": {}, 
+        "tamanos": {
+            "<<Tipo>>": 11,
+            "<<Sucursal>>": 11,
+            "<<Seccion>>": 11,
+            "<<Confechor>>": 11,
+            "<<Concat>>": 11
+        }
+    }
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
@@ -73,20 +83,33 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v55", layout="wide")
+st.set_page_config(page_title="Provident Pro v56", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v55")
+st.title("🚀 Generador Pro v56")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
+# --- SIDEBAR: CONFIGURACIÓN ---
 with st.sidebar:
     st.header("⚙️ Configuración")
+    
+    # SECCIÓN DE TAMAÑOS INDEPENDIENTES
+    with st.expander("📏 TAMAÑOS DE FUENTE (PTS)", expanded=True):
+        for key in st.session_state.config["tamanos"].keys():
+            st.session_state.config["tamanos"][key] = st.number_input(
+                f"Tamaño {key}", 
+                min_value=6, max_value=80, 
+                value=st.session_state.config["tamanos"].get(key, 11)
+            )
+
     if st.button("💾 GUARDAR CONFIG"):
         with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
         st.toast("Configuración guardada")
+    
     st.divider()
+    # Conexión Airtable
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -105,6 +128,7 @@ with st.sidebar:
                 ]
                 st.rerun()
 
+# --- CUERPO PRINCIPAL ---
 if 'raw_records' in st.session_state:
     modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
@@ -147,13 +171,17 @@ if 'raw_records' in st.session_state:
                     f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
                     
-                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
-                                  "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
-                                  "<<Concat>>": f_concat}
+                    reemplazos = {
+                        "<<Tipo>>": f_tipo, 
+                        "<<Sucursal>>": f_suc, 
+                        "<<Seccion>>": record.get('Seccion'), 
+                        "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
+                        "<<Concat>>": f_concat
+                    }
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
-                    # REGLA: Eliminar Hoja 4 si no hay Lista
+                    # Regla Diapositiva 4
                     if f_tipo == "Actividad en Sucursal":
                         adj_lista = record_orig.get("Lista de asistencia")
                         if not adj_lista or (isinstance(adj_lista, list) and len(adj_lista) == 0):
@@ -174,6 +202,7 @@ if 'raw_records' in st.session_state:
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
 
+                        # TEXTO: Aplicar tamaños personalizados desde el Sidebar
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -181,7 +210,8 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11) # SIEMPRE 11PTS
+                                        # Usar el tamaño configurado en el sidebar
+                                        run.font.size = Pt(st.session_state.config["tamanos"].get(tag, 11))
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
@@ -190,7 +220,6 @@ if 'raw_records' in st.session_state:
                         ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     
-                    if total_items > 0:
-                        p_bar.progress((i + 1) / total_items)
+                    if total_items > 0: p_bar.progress((i + 1) / total_items)
             
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
