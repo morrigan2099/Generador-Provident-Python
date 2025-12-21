@@ -57,16 +57,24 @@ def procesar_texto_maestro(texto, campo=""):
     resultado = []
     
     for i, t in enumerate(tokens):
-        if re.match(r'\s+|\.|\(|\)', t):
+        if not t or re.match(r'\s+|\.|\(|\)', t):
             resultado.append(t); continue
-        forzar = (i == 0)
-        if not forzar:
-            previo = "".join(tokens[:i]).strip()
-            if previo.endswith('.') or previo.endswith('('): forzar = True
         
-        if forzar: resultado.append(t.capitalize())
-        elif t in pequenas: resultado.append(t.lower())
-        else: resultado.append(t.capitalize())
+        # Determinar si debe ir en mayúscula inicial
+        forzar_cap = (i == 0)
+        if not forzar_cap:
+            # Revisar el contenido acumulado previo para ver si termina en punto o paréntesis
+            texto_previo = "".join(tokens[:i]).strip()
+            if texto_previo.endswith('.') or texto_previo.endswith('('):
+                forzar_cap = True
+        
+        if forzar_cap:
+            resultado.append(t.capitalize())
+        elif t in pequenas:
+            resultado.append(t.lower())
+        else:
+            resultado.append(t.capitalize())
+            
     return "".join(resultado)
 
 def generar_pdf(pptx_bytes):
@@ -82,45 +90,40 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v36", layout="wide")
-st.title("🚀 Generador Pro: Auto-ajuste de Fuente y Fix API")
+st.set_page_config(page_title="Provident Pro v37", layout="wide")
+st.title("🚀 Generador Pro: Tipo 64pts & Fix Final")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    if st.button("💾 GUARDAR CONFIGURACIÓN", use_container_width=True):
+    if st.button("💾 GUARDAR CONFIGURACIÓN", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
         st.toast("Configuración guardada")
     
     st.divider()
-    try:
-        r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
-        if r_bases.status_code == 200:
-            base_opts = {b['name']: b['id'] for b in r_bases.json().get('bases', [])}
-            base_sel = st.selectbox("Base:", [""] + list(base_opts.keys()))
-            if base_sel:
-                base_id = base_opts[base_sel]
-                r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_id}/tables", headers=headers)
-                tablas_data = r_tab.json().get('tables')
-                
-                if tablas_data:
-                    tabla_opts = {t['name']: t['id'] for t in tablas_data}
-                    tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
-                    if st.button("🔄 CARGAR DATOS"):
-                        r_reg = requests.get(f"https://api.airtable.com/v0/{base_id}/{tabla_sel}", headers=headers)
-                        recs = r_reg.json().get("records", [])
-                        st.session_state.raw_data_original = recs
-                        st.session_state.raw_records = [
-                            {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} 
-                            for r in recs
-                        ]
-                        st.rerun()
-                else:
-                    st.error("No se pudieron cargar las tablas. Revisa los scopes del Token.")
-    except Exception as e:
-        st.error(f"Error de conexión: {e}")
+    r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
+    if r_bases.status_code == 200:
+        base_opts = {b['name']: b['id'] for b in r_bases.json().get('bases', [])}
+        base_sel = st.selectbox("Base:", [""] + list(base_opts.keys()))
+        if base_sel:
+            base_id = base_opts[base_sel]
+            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_id}/tables", headers=headers)
+            # Extraer tablas de forma segura
+            json_tab = r_tab.json()
+            if 'tables' in json_tab:
+                tabla_opts = {t['name']: t['id'] for t in json_tab['tables']}
+                tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
+                if st.button("🔄 CARGAR DATOS"):
+                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_id}/{tabla_sel}", headers=headers)
+                    recs = r_reg.json().get("records", [])
+                    st.session_state.raw_data_original = recs
+                    st.session_state.raw_records = [
+                        {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} 
+                        for r in recs
+                    ]
+                    st.rerun()
 
 if 'raw_records' in st.session_state:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
@@ -128,8 +131,9 @@ if 'raw_records' in st.session_state:
     
     with st.sidebar:
         st.divider()
+        st.subheader("👁️ Columnas Visibles")
         def_cols = [c for c in st.session_state.config.get("columnas_visibles", []) if c in all_cols] or all_cols
-        selected_cols = st.multiselect("Columnas:", all_cols, default=def_cols)
+        selected_cols = st.multiselect("Selecciona campos:", all_cols, default=def_cols)
         st.session_state.config["columnas_visibles"] = selected_cols
 
     df_view = df_full[[c for c in selected_cols if c in df_full.columns]].copy()
@@ -137,6 +141,8 @@ if 'raw_records' in st.session_state:
         if len(df_view) > 0 and isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
     df_view.insert(0, "Seleccionar", False)
+    
+    st.subheader("1. Selección de Registros")
     df_edit = st.data_editor(
         df_view, use_container_width=True, hide_index=True,
         column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)}
@@ -164,6 +170,7 @@ if 'raw_records' in st.session_state:
                     record_orig = st.session_state.raw_data_original[idx]['fields']
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
+                    
                     status.text(f"Procesando {i+1}/{total}: {f_tipo}")
 
                     reemplazos = {
@@ -188,7 +195,7 @@ if 'raw_records' in st.session_state:
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
 
-                        # TEXTO CON LÓGICA DE FUENTE 64PT -> 2 LÍNEAS
+                        # TEXTO: TIPO 64pts (Reduciendo hasta 2 líneas)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -200,13 +207,15 @@ if 'raw_records' in st.session_state:
                                         if tag == "<<Tipo>>":
                                             current_size = 64
                                             run.font.size = Pt(current_size)
-                                            # Reducción de fuente hasta que quepa en 2 líneas
-                                            # (Simulado mediante longitud de caracteres para evitar loop infinito)
-                                            while len(str(val)) * (current_size/20) > 60 and current_size > 20:
-                                                current_size -= 4
-                                                run.font.size = Pt(current_size)
-                                        elif tag == "<<Sucursal>>": run.font.size = Pt(14)
-                                        else: run.font.size = Pt(11)
+                                            # Reducción simple: si el texto es muy largo, bajamos la fuente
+                                            # Un texto de >40 caracteres suele requerir menos de 64pts para 2 líneas
+                                            if len(str(val)) > 20:
+                                                new_size = max(24, 64 - (len(str(val)) - 20) * 1.5)
+                                                run.font.size = Pt(new_size)
+                                        elif tag == "<<Sucursal>>": 
+                                            run.font.size = Pt(14)
+                                        else: 
+                                            run.font.size = Pt(11)
 
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} - {f_tipo}, {f_suc}"
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -217,5 +226,5 @@ if 'raw_records' in st.session_state:
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
-            status.success("✅ ¡Listo!")
-            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v36.zip", use_container_width=True)
+            status.success("✅ Generación completa.")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v37_Final.zip", use_container_width=True)
