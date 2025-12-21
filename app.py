@@ -46,26 +46,33 @@ def procesar_texto_maestro(texto, campo=""):
     texto = str(texto)
     nfkd = unicodedata.normalize('NFKD', texto)
     texto_limpio = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    # Eliminar saltos de línea y dobles espacios (Texto Plano)
     texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
     texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
     
     if campo == 'Hora': return texto_limpio
     if campo == 'Seccion': return texto_limpio.upper()
 
+    # Definición de palabras cortas (con el nombre corregido: 'pequenas')
     pequenas = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
     tokens = re.split(r'(\s+|\.|\(|\))', texto_limpio)
     resultado = []
+    
     for i, t in enumerate(tokens):
         if re.match(r'\s+|\.|\(|\)', t):
             resultado.append(t); continue
+        
         forzar = (i == 0)
         if not forzar:
             previo = "".join(tokens[:i]).strip()
             if previo.endswith('.') or previo.endswith('('): forzar = True
         
-        if forzar: resultado.append(t.capitalize())
-        elif t in pequeñas: resultado.append(t.lower())
-        else: resultado.append(t.capitalize())
+        if forzar: 
+            resultado.append(t.capitalize())
+        elif t in pequenas: # CORRECCIÓN NameError AQUÍ
+            resultado.append(t.lower())
+        else:
+            resultado.append(t.capitalize())
     return "".join(resultado)
 
 def generar_pdf(pptx_bytes):
@@ -81,8 +88,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v34", layout="wide")
-st.title("🚀 Generador Pro: Checkbox Maestro y Tipo 11pts")
+st.set_page_config(page_title="Provident Pro v35", layout="wide")
+st.title("🚀 Generador Pro: Estabilidad Crítica")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -127,11 +134,10 @@ if 'raw_records' in st.session_state:
     for c in df_view.columns:
         if len(df_view) > 0 and isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
-    # AGREGAR COLUMNA DE SELECCIÓN CON CHECKBOX MAESTRO
     df_view.insert(0, "Seleccionar", False)
     
     st.subheader("1. Selección de Registros")
-    # El editor de datos activa el checkbox en la cinta de opciones automáticamente al definir el tipo
+    # El checkbox maestro aparece automáticamente en el encabezado de esta columna
     df_edit = st.data_editor(
         df_view, 
         use_container_width=True, 
@@ -139,7 +145,6 @@ if 'raw_records' in st.session_state:
         column_config={
             "Seleccionar": st.column_config.CheckboxColumn(
                 "Seleccionar",
-                help="Seleccionar todo desde el encabezado",
                 default=False,
             )
         }
@@ -179,6 +184,7 @@ if 'raw_records' in st.session_state:
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
+                        # IMÁGENES
                         for shape in list(slide.shapes): 
                             tag_en = None
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
@@ -193,6 +199,7 @@ if 'raw_records' in st.session_state:
                                         sp = shape._element; sp.getparent().remove(sp)
                                     except: pass
 
+                        # TEXTO (Tamaños: Tipo 11, Sucursal 14, Resto 11)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -200,7 +207,6 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # AJUSTE: TIPO 11, SUCURSAL 14, RESTO 11
                                         if tag == "<<Tipo>>": run.font.size = Pt(11)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
@@ -215,6 +221,6 @@ if 'raw_records' in st.session_state:
                     p_bar.progress((i + 1) / total)
             
             status.success(f"✅ ¡{total} archivos generados!")
-            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v34.zip", use_container_width=True)
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v35.zip", use_container_width=True)
 else:
-    st.info("💡 Por favor, carga los datos desde la barra lateral.")
+    st.info("💡 Por favor, selecciona una Base/Tabla y carga los datos.")
