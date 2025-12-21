@@ -13,6 +13,7 @@ import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
 from pdf2image import convert_from_bytes
+from PIL import Image, ImageOps
 
 # --- CONFIGURACIÓN Y UTILIDADES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -28,9 +29,12 @@ def cargar_config():
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
-    t = str(texto).strip().replace('\n', ' ').replace('\r', ' ')
+    # Eliminar diagonales y limpiar espacios
+    t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
+    
     if campo == 'Seccion': return t.upper()
+    
     palabras = t.lower().split()
     if not palabras: return ""
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
@@ -52,10 +56,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v49", layout="wide")
+st.set_page_config(page_title="Provident Pro v50", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v49")
+st.title("🚀 Generador Pro v50")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -138,7 +142,6 @@ if 'raw_records' in st.session_state:
                     
                     f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
                     
-                    # LOGICA CONDICIONAL PARA CONCAT Y NOMBRE
                     if f_tipo == "Actividad en Sucursal":
                         f_concat = f"Sucursal {f_suc}"
                         nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}"
@@ -153,7 +156,7 @@ if 'raw_records' in st.session_state:
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
-                            # IMÁGENES
+                            # IMÁGENES CON RECORTE INTELIGENTE (NO ESTIRAR)
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_foto:
@@ -161,11 +164,23 @@ if 'raw_records' in st.session_state:
                                     adj = record_orig.get(tf)
                                     if adj and isinstance(adj, list):
                                         try:
-                                            img_d = requests.get(adj[0].get('url')).content
-                                            slide.shapes.add_picture(BytesIO(img_d), shape.left, shape.top, shape.width, shape.height)
+                                            resp = requests.get(adj[0].get('url'))
+                                            img_orig = Image.open(BytesIO(resp.content))
+                                            
+                                            # Calcular dimensiones del placeholder en pixeles (aprox 96 dpi)
+                                            w_pt, h_pt = shape.width, shape.height
+                                            # FIT: Ajustar manteniendo proporción sin deformar
+                                            img_final = ImageOps.fit(img_orig, (int(w_pt/9525), int(h_pt/9525)), Image.Resampling.LANCZOS)
+                                            
+                                            tmp_img = BytesIO()
+                                            img_final.save(tmp_img, format="JPEG", quality=95)
+                                            tmp_img.seek(0)
+                                            
+                                            slide.shapes.add_picture(tmp_img, shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
-                        # TEXTO (Sucursal 12, Resto 11)
+                        
+                        # TEXTO (TODO A 11PTS)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -173,8 +188,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        if tag == "<<Sucursal>>": run.font.size = Pt(12)
-                                        else: run.font.size = Pt(11)
+                                        run.font.size = Pt(11) # SIEMPRE 11PTS
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
