@@ -162,7 +162,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        if tag == "<<Tipo>>": run.font.size = Pt(14)
+                                        if tag == "<<Tipo>>": run.font.size = Pt(12)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
 
