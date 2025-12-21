@@ -22,6 +22,8 @@ def cargar_config():
         try:
             with open(CONFIG_FILE, "r") as f: 
                 cfg = json.load(f)
+                if "plantillas" not in cfg: cfg["plantillas"] = {}
+                if "columnas_visibles" not in cfg: cfg["columnas_visibles"] = []
                 return cfg
         except: pass
     return {"plantillas": {}, "columnas_visibles": []}
@@ -33,194 +35,186 @@ def guardar_config_json(config_data):
 if 'config' not in st.session_state:
     st.session_state.config = cargar_config()
 
-# --- MOTOR DE TEXTO (RECONSTRUIDO DESDE CERO) ---
-def procesar_texto_maestro(valor_crudo, nombre_campo=""):
-    if not valor_crudo or str(valor_crudo).lower() == "none":
-        return ""
-    if isinstance(valor_crudo, list):
-        return valor_crudo # Mantiene los adjuntos intactos
-    
-    texto = str(valor_crudo).strip()
-    
-    if nombre_campo == 'Seccion':
-        return texto.upper()
-    
-    # Capitalización simple: Primera letra mayúscula, resto minúscula
-    # Se aplica a campos generales para evitar errores de lógica compleja
-    palabras = texto.lower().split()
-    if not palabras:
-        return ""
-    
-    preposiciones = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
-    resultado = []
-    for i, p in enumerate(palabras):
-        if i == 0 or p not in preposiciones:
-            resultado.append(p.capitalize())
-        else:
-            resultado.append(p)
-            
-    return " ".join(resultado)
+# --- MOTOR DE TEXTO MAESTRO ---
+MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
-# --- FUNCIÓN PDF ---
+def procesar_texto_maestro(texto, campo=""):
+    if not texto or str(texto).lower() == "none": return ""
+    if isinstance(texto, list): return texto 
+    
+    texto = str(texto)
+    nfkd = unicodedata.normalize('NFKD', texto)
+    texto_limpio = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    texto_limpio = texto_limpio.replace('\n', ' ').replace('\r', ' ')
+    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
+    
+    if campo == 'Hora': return texto_limpio
+    if campo == 'Seccion': return texto_limpio.upper()
+
+    pequenas = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
+    tokens = re.split(r'(\s+|\.|\(|\))', texto_limpio)
+    resultado = []
+    for i, t in enumerate(tokens):
+        if re.match(r'\s+|\.|\(|\)', t):
+            resultado.append(t); continue
+        forzar = (i == 0)
+        if not forzar:
+            previo = "".join(tokens[:i]).strip()
+            if previo.endswith('.') or previo.endswith('('): forzar = True
+        
+        if forzar: resultado.append(t.capitalize())
+        elif t in pequeñas: resultado.append(t.lower())
+        else: resultado.append(t.capitalize())
+    return "".join(resultado)
+
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp.write(pptx_bytes)
-        path_pptx = tmp.name
+        path = tmp.name
     try:
-        # Comando para Linux (Streamlit Cloud)
-        subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path_pptx), path_pptx], check=True)
-        path_pdf = path_pptx.replace(".pptx", ".pdf")
-        with open(path_pdf, "rb") as f:
-            pdf_data = f.read()
-        if os.path.exists(path_pptx): os.remove(path_pptx)
-        if os.path.exists(path_pdf): os.remove(path_pdf)
-        return pdf_data
-    except Exception:
-        return None
+        subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
+        pdf_path = path.replace(".pptx", ".pdf")
+        with open(pdf_path, "rb") as f: data = f.read()
+        os.remove(path); os.remove(pdf_path)
+        return data
+    except: return None
 
-# --- INTERFAZ ---
-st.set_page_config(page_title="Provident Pro v40", layout="wide")
-st.title("🚀 Generador Pro: Fix de Estructura y Tipo 11pts")
+# --- UI ---
+st.set_page_config(page_title="Provident Pro v34", layout="wide")
+st.title("🚀 Generador Pro: Checkbox Maestro y Tipo 11pts")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 with st.sidebar:
-    st.header("⚙️ Panel de Control")
-    if st.button("💾 GUARDAR CONFIGURACIÓN"):
+    st.header("⚙️ Configuración")
+    if st.button("💾 GUARDAR CONFIGURACIÓN", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
-        st.toast("Guardado")
-
+        st.toast("Configuración guardada")
+    
     st.divider()
-    # Conexión Airtable
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
-        bases_map = {b['name']: b['id'] for b in r_bases.json().get('bases', [])}
-        base_sel = st.selectbox("Base:", [""] + list(bases_map.keys()))
-        
+        base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
+        base_sel = st.selectbox("Base:", [""] + list(base_opts.keys()))
         if base_sel:
-            bid = bases_map[base_sel]
-            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{bid}/tables", headers=headers)
-            tablas_map = {t['name']: t['id'] for t in r_tab.json().get('tables', [])}
-            tabla_sel = st.selectbox("Tabla:", list(tablas_map.keys()))
-            
-            if st.button("🔄 CARGAR DATOS"):
-                r_reg = requests.get(f"https://api.airtable.com/v0/{bid}/{tablas_map[tabla_sel]}", headers=headers)
-                recs = r_reg.json().get("records", [])
-                st.session_state.raw_data_original = recs
-                # Procesamiento de campos
+            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
+            tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
+            tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
+            if st.button("🔄 CARGAR Y PROCESAR"):
+                r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
+                data_json = r_reg.json().get("records", [])
+                st.session_state.raw_data_original = data_json 
                 st.session_state.raw_records = [
                     {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} 
-                    for r in recs
+                    for r in data_json
                 ]
                 st.rerun()
 
-# --- VISTA DE TABLA ---
 if 'raw_records' in st.session_state:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
+    all_cols = list(df_full.columns)
     
     with st.sidebar:
         st.divider()
-        visibles = [c for c in st.session_state.config.get("columnas_visibles", []) if c in df_full.columns] or list(df_full.columns)
-        selected_cols = st.multiselect("Columnas Visibles:", list(df_full.columns), default=visibles)
+        st.subheader("👁️ Columnas Visibles")
+        default_cols = [c for c in st.session_state.config.get("columnas_visibles", []) if c in all_cols] or all_cols
+        selected_cols = st.multiselect("Selecciona campos:", all_cols, default=default_cols)
         st.session_state.config["columnas_visibles"] = selected_cols
 
     df_view = df_full[[c for c in selected_cols if c in df_full.columns]].copy()
-    # Eliminar columnas que contienen listas (adjuntos) para no romper la tabla
-    for col in df_view.columns:
-        if not df_view.empty and isinstance(df_view[col].iloc[0], list):
-            df_view.drop(col, axis=1, inplace=True)
+    for c in df_view.columns:
+        if len(df_view) > 0 and isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
+    # AGREGAR COLUMNA DE SELECCIÓN CON CHECKBOX MAESTRO
     df_view.insert(0, "Seleccionar", False)
     
-    # Editor con Checkbox Maestro en el Header
+    st.subheader("1. Selección de Registros")
+    # El editor de datos activa el checkbox en la cinta de opciones automáticamente al definir el tipo
     df_edit = st.data_editor(
-        df_view, use_container_width=True, hide_index=True,
-        column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)}
+        df_view, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Seleccionar": st.column_config.CheckboxColumn(
+                "Seleccionar",
+                help="Seleccionar todo desde el encabezado",
+                default=False,
+            )
+        }
     )
-    
-    indices_seleccionados = df_edit.index[df_edit["Seleccionar"] == True].tolist()
+    sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
-    if indices_seleccionados:
-        modo = st.radio("Formato:", ["Postales", "Reportes"], horizontal=True)
-        path_plantillas = os.path.join("Plantillas", modo.upper())
-        AZUL_CORP = RGBColor(0, 176, 240)
+    if sel_idx:
+        modo = st.radio("Acción:", ["Postales", "Reportes"], horizontal=True)
+        folder_fisica = os.path.join("Plantillas", modo.upper())
+        AZUL_CELESTE = RGBColor(0, 176, 240)
         
-        archivos_pptx = [f for f in os.listdir(path_plantillas) if f.endswith('.pptx')]
-        tipos_en_seleccion = df_view.loc[indices_seleccionados, "Tipo"].unique()
-        
-        for t in tipos_en_seleccion:
-            p_previa = st.session_state.config.get("plantillas", {}).get(t)
-            idx = archivos_pptx.index(p_previa) if p_previa in archivos_pptx else 0
-            st.session_state.config.setdefault("plantillas", {})[t] = st.selectbox(f"Plantilla para {t}:", archivos_pptx, index=idx)
+        archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
+        tipos_sel = df_view.loc[sel_idx, "Tipo"].unique() if "Tipo" in df_view.columns else []
+        for t in tipos_sel:
+            p_mem = st.session_state.config["plantillas"].get(t)
+            idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
+            st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=t)
 
-        if st.button("🔥 GENERAR SELECCIONADOS", use_container_width=True, type="primary"):
-            p_bar = st.progress(0); zip_buffer = BytesIO()
-            total = len(indices_seleccionados)
-            
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
-                for i, idx in enumerate(indices_seleccionados):
-                    rec_proc = st.session_state.raw_records[idx]['fields']
-                    rec_orig = st.session_state.raw_data_original[idx]['fields']
+        if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
+            p_bar = st.progress(0); status = st.empty(); zip_buf = BytesIO()
+            total = len(sel_idx)
+            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
+                for i, idx in enumerate(sel_idx):
+                    record = st.session_state.raw_records[idx]['fields']
+                    record_orig = st.session_state.raw_data_original[idx]['fields']
                     
-                    f_tipo = rec_proc.get('Tipo')
-                    f_suc = rec_proc.get('Sucursal')
+                    dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
+                    f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
+                    status.text(f"Procesando {i+1}/{total}: {f_tipo} - {f_suc}")
                     
-                    # Cargar Plantilla
-                    prs = Presentation(os.path.join(path_plantillas, st.session_state.config["plantillas"][f_tipo]))
+                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                    f_confechor = procesar_texto_maestro(f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}")
+                    f_concat = procesar_texto_maestro(f"{lugar}, {record.get('Municipio')}")
                     
-                    reemplazos = {
-                        "<<Tipo>>": f_tipo,
-                        "<<Sucursal>>": f_suc,
-                        "<<Seccion>>": rec_proc.get('Seccion'),
-                        "<<Confechor>>": f"{rec_proc.get('Fecha')}, {rec_proc.get('Hora')}",
-                        "<<Concat>>": f"{rec_proc.get('Punto de reunion') or rec_proc.get('Ruta a seguir')}, {rec_proc.get('Municipio')}"
-                    }
+                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
+                    tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
 
+                    prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
-                        # Inserción de Imágenes
-                        for shape in list(slide.shapes):
-                            nombre_shape = shape.text_frame.text if shape.has_text_frame else ""
-                            tags_img = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
-                            
-                            for tag in tags_img:
-                                if f"<<{tag}>>" in nombre_shape or tag == shape.name:
-                                    adjuntos = rec_orig.get(tag)
-                                    if adjuntos and isinstance(adjuntos, list):
-                                        try:
-                                            resp = requests.get(adjuntos[0].get('url'))
-                                            slide.shapes.add_picture(BytesIO(resp.content), shape.left, shape.top, shape.width, shape.height)
-                                            # Borrar placeholder
-                                            el = shape._element
-                                            el.getparent().remove(el)
-                                        except: pass
+                        for shape in list(slide.shapes): 
+                            tag_en = None
+                            txt_b = shape.text_frame.text if shape.has_text_frame else ""
+                            for tf in tags_foto:
+                                if f"<<{tf}>>" in txt_b or tf == shape.name: tag_en = tf; break
+                            if tag_en:
+                                adj = record_orig.get(tag_en)
+                                if adj and isinstance(adj, list) and len(adj) > 0:
+                                    try:
+                                        img_d = requests.get(adj[0].get('url')).content
+                                        slide.shapes.add_picture(BytesIO(img_d), shape.left, shape.top, shape.width, shape.height)
+                                        sp = shape._element; sp.getparent().remove(sp)
+                                    except: pass
 
-                        # Reemplazo de Texto
                         for shape in slide.shapes:
                             if shape.has_text_frame:
-                                for tag, valor in reemplazos.items():
+                                for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        tf = shape.text_frame; tf.clear()
+                                        tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-                                        run = p.add_run()
-                                        run.text = str(valor)
-                                        run.font.bold = True
-                                        run.font.color.rgb = AZUL_CORP
-                                        # TAMAÑOS: Tipo 11, Sucursal 14, Otros 11
+                                        run = p.add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
+                                        # AJUSTE: TIPO 11, SUCURSAL 14, RESTO 11
                                         if tag == "<<Tipo>>": run.font.size = Pt(11)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
 
-                    # Guardado
-                    pp_out = BytesIO(); prs.save(pp_out)
-                    final_data = generar_pdf(pp_out.getvalue())
-                    
-                    if final_data:
+                    nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc} - {procesar_texto_maestro(lugar)}, {record.get('Municipio')}"
+                    pp_io = BytesIO(); prs.save(pp_io)
+                    data_out = generar_pdf(pp_io.getvalue())
+                    if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
-                        nombre_final = f"{rec_proc.get('Fecha')} - {f_tipo} - {f_suc}{ext}"
-                        zip_file.writestr(f"{modo}/{f_suc}/{nombre_final}", final_data if modo == "Reportes" else convert_from_bytes(final_data)[0].tobytes())
-                    
+                        ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
+                        zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
-            st.success("¡Generación Exitosa!")
-            st.download_button("📥 DESCARGAR RESULTADOS", zip_buffer.getvalue(), "Provident_v40.zip", use_container_width=True)
+            status.success(f"✅ ¡{total} archivos generados!")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v34.zip", use_container_width=True)
+else:
+    st.info("💡 Por favor, carga los datos desde la barra lateral.")
