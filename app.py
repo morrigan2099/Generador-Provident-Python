@@ -41,7 +41,7 @@ DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domin
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
-    if isinstance(texto, list): return texto # No tocar listas de adjuntos
+    if isinstance(texto, list): return texto 
     
     texto = str(texto)
     nfkd = unicodedata.normalize('NFKD', texto)
@@ -58,13 +58,13 @@ def procesar_texto_maestro(texto, campo=""):
     for i, t in enumerate(tokens):
         if re.match(r'\s+|\.|\(|\)', t):
             resultado.append(t); continue
-        forzar = i == 0
+        forzar = (i == 0)
         if not forzar:
             previo = "".join(tokens[:i]).strip()
             if previo.endswith('.') or previo.endswith('('): forzar = True
         
         if forzar: resultado.append(t.capitalize())
-        elif t in pequenas: resultado.append(t.lower())
+        elif t in pequeñas: resultado.append(t.lower())
         else: resultado.append(t.capitalize())
     return "".join(resultado)
 
@@ -81,8 +81,8 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v32", layout="wide")
-st.title("🚀 Generador Pro: Fix Crítico de Imágenes e Inteligencia JSON")
+st.set_page_config(page_title="Provident Pro v34", layout="wide")
+st.title("🚀 Generador Pro: Checkbox Maestro y Tipo 11pts")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -91,7 +91,7 @@ with st.sidebar:
     st.header("⚙️ Configuración")
     if st.button("💾 GUARDAR CONFIGURACIÓN", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
-        st.toast("Configuración guardada (Plantillas y Columnas)")
+        st.toast("Configuración guardada")
     
     st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -102,12 +102,14 @@ with st.sidebar:
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
             tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
-            if st.button("🔄 CARGAR DATOS"):
+            if st.button("🔄 CARGAR Y PROCESAR"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
-                raw = r_reg.json().get("records", [])
-                # Guardamos los registros crudos para tener acceso a las URLs de imágenes originales
-                st.session_state.raw_data_original = raw 
-                st.session_state.raw_records = [{'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} for r in raw]
+                data_json = r_reg.json().get("records", [])
+                st.session_state.raw_data_original = data_json 
+                st.session_state.raw_records = [
+                    {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} 
+                    for r in data_json
+                ]
                 st.rerun()
 
 if 'raw_records' in st.session_state:
@@ -116,17 +118,32 @@ if 'raw_records' in st.session_state:
     
     with st.sidebar:
         st.divider()
-        default_cols = [c for c in st.session_state.config["columnas_visibles"] if c in all_cols] or all_cols
-        selected_cols = st.multiselect("Columnas Visibles:", all_cols, default=default_cols)
+        st.subheader("👁️ Columnas Visibles")
+        default_cols = [c for c in st.session_state.config.get("columnas_visibles", []) if c in all_cols] or all_cols
+        selected_cols = st.multiselect("Selecciona campos:", all_cols, default=default_cols)
         st.session_state.config["columnas_visibles"] = selected_cols
 
     df_view = df_full[[c for c in selected_cols if c in df_full.columns]].copy()
-    # Limpiar visualmente la tabla de listas de adjuntos
     for c in df_view.columns:
         if len(df_view) > 0 and isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
+    # AGREGAR COLUMNA DE SELECCIÓN CON CHECKBOX MAESTRO
     df_view.insert(0, "Seleccionar", False)
-    df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True)
+    
+    st.subheader("1. Selección de Registros")
+    # El editor de datos activa el checkbox en la cinta de opciones automáticamente al definir el tipo
+    df_edit = st.data_editor(
+        df_view, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Seleccionar": st.column_config.CheckboxColumn(
+                "Seleccionar",
+                help="Seleccionar todo desde el encabezado",
+                default=False,
+            )
+        }
+    )
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
@@ -144,11 +161,9 @@ if 'raw_records' in st.session_state:
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0); status = st.empty(); zip_buf = BytesIO()
             total = len(sel_idx)
-            
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                 for i, idx in enumerate(sel_idx):
                     record = st.session_state.raw_records[idx]['fields']
-                    # Acceder a las URLs originales (importante para los adjuntos)
                     record_orig = st.session_state.raw_data_original[idx]['fields']
                     
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
@@ -163,35 +178,21 @@ if 'raw_records' in st.session_state:
                     tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
-                    
                     for slide in prs.slides:
-                        # --- PASO 1: INSERTAR IMÁGENES ---
-                        # Escaneamos todas las formas de la diapositiva
                         for shape in list(slide.shapes): 
-                            found_tag = None
-                            # Verificar si el tag está en el texto o en el nombre de la forma
-                            shape_text = shape.text_frame.text if shape.has_text_frame else ""
-                            for tf_tag in tags_foto:
-                                if f"<<{tf_tag}>>" in shape_text or tf_tag == shape.name:
-                                    found_tag = tf_tag
-                                    break
-                            
-                            if found_tag:
-                                adj = record_orig.get(found_tag) # Usar el dato crudo de Airtable
+                            tag_en = None
+                            txt_b = shape.text_frame.text if shape.has_text_frame else ""
+                            for tf in tags_foto:
+                                if f"<<{tf}>>" in txt_b or tf == shape.name: tag_en = tf; break
+                            if tag_en:
+                                adj = record_orig.get(tag_en)
                                 if adj and isinstance(adj, list) and len(adj) > 0:
                                     try:
-                                        img_url = adj[0].get('url')
-                                        r_img = requests.get(img_url)
-                                        if r_img.status_code == 200:
-                                            # Insertar imagen en la posición exacta del placeholder
-                                            slide.shapes.add_picture(BytesIO(r_img.content), shape.left, shape.top, shape.width, shape.height)
-                                            # Eliminar el cuadro de texto del placeholder para que no estorbe
-                                            sp = shape._element
-                                            sp.getparent().remove(sp)
-                                    except Exception as e:
-                                        st.error(f"Error en {found_tag}: {e}")
+                                        img_d = requests.get(adj[0].get('url')).content
+                                        slide.shapes.add_picture(BytesIO(img_d), shape.left, shape.top, shape.width, shape.height)
+                                        sp = shape._element; sp.getparent().remove(sp)
+                                    except: pass
 
-                        # --- PASO 2: REEMPLAZAR TEXTO ---
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -199,7 +200,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # Tamaños de fuente
+                                        # AJUSTE: TIPO 11, SUCURSAL 14, RESTO 11
                                         if tag == "<<Tipo>>": run.font.size = Pt(11)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
@@ -214,4 +215,6 @@ if 'raw_records' in st.session_state:
                     p_bar.progress((i + 1) / total)
             
             status.success(f"✅ ¡{total} archivos generados!")
-            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v32.zip", use_container_width=True)
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_v34.zip", use_container_width=True)
+else:
+    st.info("💡 Por favor, carga los datos desde la barra lateral.")
