@@ -27,34 +27,23 @@ def cargar_config():
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
-    
-    # Forzar minúsculas en Hora
     if campo == 'Hora': return str(texto).lower().strip()
     
-    # Limpieza: eliminar diagonales y normalizar espacios
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
-    
     if campo == 'Seccion': return t.upper()
     
     palabras = t.lower().split()
     if not palabras: return ""
-    
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
     resultado = []
-    
     for i, p in enumerate(palabras):
         es_inicio = (i == 0)
         despues_parentesis = (i > 0 and "(" in palabras[i-1])
-        
         if es_inicio or despues_parentesis or (p not in prep):
-            if p.startswith("("):
-                resultado.append("(" + p[1:].capitalize())
-            else:
-                resultado.append(p.capitalize())
-        else:
-            resultado.append(p)
-            
+            if p.startswith("("): resultado.append("(" + p[1:].capitalize())
+            else: resultado.append(p.capitalize())
+        else: resultado.append(p)
     return " ".join(resultado)
 
 def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
@@ -84,10 +73,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v53", layout="wide")
+st.set_page_config(page_title="Provident Pro v54", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v53")
+st.title("🚀 Generador Pro v54")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -117,28 +106,23 @@ with st.sidebar:
                 st.rerun()
 
 if 'raw_records' in st.session_state:
-    st.subheader("1. Acción y Selección")
-    modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
-    
+    modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    c_sel1, c_sel2, _ = st.columns([1, 1, 4])
-    if 'select_all' not in st.session_state: st.session_state.select_all = False
     
-    if c_sel1.button("✅ Seleccionar Todo"): st.session_state.select_all = True; st.rerun()
-    if c_sel2.button("❌ Desmarcar Todo"): st.session_state.select_all = False; st.rerun()
-
     df_view = df_full.copy()
     for c in df_view.columns:
         if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
+    if 'select_all' not in st.session_state: st.session_state.select_all = False
+    c1, c2, _ = st.columns([1,1,4])
+    if c1.button("✅ Todo"): st.session_state.select_all = True; st.rerun()
+    if c2.button("❌ Nada"): st.session_state.select_all = False; st.rerun()
+
     df_view.insert(0, "Seleccionar", st.session_state.select_all)
-    df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True,
-                             column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)})
-    
+    df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        st.subheader("2. Plantillas")
         folder_fisica = os.path.join("Plantillas", modo.upper())
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
@@ -148,8 +132,7 @@ if 'raw_records' in st.session_state:
             st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=f"p_{t}")
 
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
-            p_bar = st.progress(0); status = st.empty(); zip_buf = BytesIO()
-            total = len(sel_idx)
+            p_bar = st.progress(0); zip_buf = BytesIO()
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
@@ -158,46 +141,41 @@ if 'raw_records' in st.session_state:
                     record_orig = st.session_state.raw_data_original[idx]['fields']
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
-                    f_hora = record.get('Hora', '').lower()
                     
-                    status.text(f"Procesando: {f_suc}")
-                    f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {f_hora}"
-                    
-                    # LOGICA DE CONCATENACIÓN (Ignora None/Vacíos)
+                    # LOGICA DE CONCAT Y NOMBRE (Ignora None)
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
-                    municipio = record.get('Municipio')
-                    
-                    lista_concat = [str(x) for x in [lugar, municipio] if x and str(x).lower() != 'none']
-                    f_concat_base = ", ".join(lista_concat)
-                    
-                    if f_tipo == "Actividad en Sucursal":
-                        f_concat = f"Sucursal {f_suc}"
-                        nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}"
-                    else:
-                        f_concat = f_concat_base
-                        nombre_partes = [f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year}", f_tipo, f_suc, f_concat]
-                        nom_arch = " - ".join([str(p) for p in nombre_partes if p and str(p).lower() != 'none'])
+                    f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
+                    nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
                     
                     reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
-                                  "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
+                                  "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
+                                  "<<Concat>>": f_concat}
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
+                    
+                    # REGLA EXCEPCIÓN: Eliminar Diapositiva 4 si Lista es vacío
+                    if f_tipo == "Actividad en Sucursal":
+                        lista_asistencia = record_orig.get("Lista de asistencia")
+                        if not lista_asistencia or len(lista_asistencia) == 0:
+                            if len(prs.slides) >= 4:
+                                rId = prs.slides._sldIdLst[3].rId
+                                prs.part.drop_rel(rId)
+                                del prs.slides._sldIdLst[3]
+
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
                             # IMÁGENES
-                            txt_b = shape.text_frame.text if shape.has_text_frame else ""
-                            tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
-                            for tf in tags_foto:
-                                if f"<<{tf}>>" in txt_b or tf == shape.name:
-                                    adj = record_orig.get(tf)
-                                    if adj and isinstance(adj, list):
-                                        try:
-                                            r_img = requests.get(adj[0].get('url')).content
-                                            img_final_io = crear_imagen_con_fondo_blur(r_img, shape.width, shape.height)
-                                            slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
-                                            sp = shape._element; sp.getparent().remove(sp)
-                                        except: pass
-                        # TEXTO
+                            if shape.has_text_frame:
+                                for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
+                                    if f"<<{tf}>>" in shape.text_frame.text:
+                                        adj = record_orig.get(tf)
+                                        if adj:
+                                            try:
+                                                r_img = requests.get(adj[0].get('url')).content
+                                                slide.shapes.add_picture(crear_imagen_con_fondo_blur(r_img, shape.width, shape.height), shape.left, shape.top, shape.width, shape.height)
+                                                sp = shape._element; sp.getparent().remove(sp)
+                                            except: pass
+                        # TEXTO: TODO ESTRICTAMENTE A 11PTS
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -205,9 +183,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # TAMAÑOS
-                                        if tag == "<<Tipo>>": run.font.size = Pt(12)
-                                        else: run.font.size = Pt(11)
+                                        run.font.size = Pt(11) # ABSOLUTAMENTE TODO A 11PTS
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
@@ -217,5 +193,4 @@ if 'raw_records' in st.session_state:
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
-            status.success(f"✅ ¡Archivos generados!")
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
