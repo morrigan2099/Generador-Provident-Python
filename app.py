@@ -14,8 +14,8 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
-# --- CONFIGURACIÓN DE TAMAÑOS ESTÁTICOS (FIJOS) ---
-TAM_TIPO      = 64  # SIEMPRE 64pts como solicitaste
+# --- CONFIGURACIÓN DE TAMAÑOS ESTÁTICOS (SIN AJUSTES AUTOMÁTICOS) ---
+TAM_TIPO      = 64  # Tamaño fijo para <<Tipo>>
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
 TAM_CONFECHOR = 11
@@ -64,7 +64,6 @@ def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=Fal
         fondo.paste(img, offset)
         img_final = fondo
     else:
-        # Estirado directo (Páginas 3 y 4)
         img_final = img.resize((render_w, render_h), Image.Resampling.LANCZOS)
 
     output = BytesIO()
@@ -105,97 +104,151 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v67", layout="wide")
+st.set_page_config(page_title="Provident Pro v69", layout="wide")
+
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v67 - Estático 64pts")
+st.title("🚀 Generador Pro v69 - Estático 100%")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# ... (Sidebar y carga de datos igual a v65) ...
+with st.sidebar:
+    st.header("⚙️ Configuración")
+    if st.button("💾 GUARDAR PLANTILLAS"):
+        with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
+        st.toast("Plantillas guardadas")
+    st.divider()
+    
+    r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
+    if r_bases.status_code == 200:
+        base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
+        base_sel = st.selectbox("Base:", [""] + list(base_opts.keys()))
+        if base_sel:
+            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
+            tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
+            tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
+            if st.button("🔄 CARGAR DATOS"):
+                r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
+                recs = r_reg.json().get("records", [])
+                st.session_state.raw_data_original = recs
+                st.session_state.raw_records = [
+                    {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} 
+                    for r in recs
+                ]
+                st.rerun()
 
 if 'raw_records' in st.session_state:
     modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
-    # ... (Editor de datos y selección) ...
+    df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
+    df_view = df_full.copy()
+    for c in df_view.columns:
+        if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
+    
+    if 'select_all' not in st.session_state: st.session_state.select_all = False
+    c1, c2, _ = st.columns([1,1,4])
+    if c1.button("✅ Todo"): st.session_state.select_all = True; st.rerun()
+    if c2.button("❌ Nada"): st.session_state.select_all = False; st.rerun()
 
-    if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
-        p_bar = st.progress(0)
-        status_text = st.empty()
-        zip_buf = BytesIO()
-        AZUL_CELESTE = RGBColor(0, 176, 240)
-        mapa_tamanos = {"<<Tipo>>": TAM_TIPO, "<<Sucursal>>": TAM_SUCURSAL, "<<Seccion>>": TAM_SECCION, "<<Confechor>>": TAM_CONFECHOR, "<<Concat>>": TAM_CONCAT}
+    df_view.insert(0, "Seleccionar", st.session_state.select_all)
+    df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True)
+    sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
-        with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-            for i, idx in enumerate(sel_idx):
-                record = st.session_state.raw_records[idx]['fields']
-                record_orig = st.session_state.raw_data_original[idx]['fields']
-                
-                # Manejo seguro de fecha para evitar IndexError
-                try:
-                    raw_fecha = record.get('Fecha', '2025-01-01')
-                    dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
-                    idx_mes = max(0, min(11, dt.month - 1))
-                    nombre_mes = MESES_ES[idx_mes]
-                except:
-                    dt = datetime.now()
-                    nombre_mes = "enero"
+    if sel_idx:
+        folder_fisica = os.path.join("Plantillas", modo.upper())
+        if not os.path.exists(folder_fisica): os.makedirs(folder_fisica)
+        archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
+        
+        tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
+        for t in tipos_sel:
+            p_mem = st.session_state.config["plantillas"].get(t)
+            idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
+            st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=f"p_{t}")
 
-                f_tipo = record.get('Tipo', 'Sin Tipo')
-                f_suc = record.get('Sucursal', '000')
-                lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
-                f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
-                
-                nom_arch = f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
-                status_text.markdown(f"**Procesando:** `{nom_arch}`")
-                
-                reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
-                              "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {nombre_mes} de {dt.year}, {record.get('Hora', '').lower()}", 
-                              "<<Concat>>": f_concat}
+        if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
+            p_bar = st.progress(0); status_text = st.empty(); zip_buf = BytesIO()
+            AZUL_CELESTE = RGBColor(0, 176, 240)
+            mapa_tamanos = {"<<Tipo>>": TAM_TIPO, "<<Sucursal>>": TAM_SUCURSAL, "<<Seccion>>": TAM_SECCION, "<<Confechor>>": TAM_CONFECHOR, "<<Concat>>": TAM_CONCAT}
 
-                prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
-                
-                # ... (Lógica de eliminación de diapositiva 4 si aplica) ...
+            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
+                for i, idx in enumerate(sel_idx):
+                    record = st.session_state.raw_records[idx]['fields']
+                    record_orig = st.session_state.raw_data_original[idx]['fields']
+                    
+                    try:
+                        raw_fecha = record.get('Fecha', '2025-01-01')
+                        dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
+                        nombre_mes = MESES_ES[max(0, min(11, dt.month - 1))]
+                    except:
+                        dt = datetime.now(); nombre_mes = "error"
 
-                for s_idx, slide in enumerate(prs.slides):
-                    for shape in list(slide.shapes):
-                        if shape.has_text_frame:
-                            # Reemplazo de imágenes con Auto-Recorte
-                            tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
-                            for tf in tags_foto:
-                                if f"<<{tf}>>" in shape.text_frame.text:
-                                    adj_data = record_orig.get(tf)
-                                    thumbnails = adj_data[0].get('thumbnails', {}) if adj_data else {}
-                                    url_hd = thumbnails.get('full', {}).get('url') or thumbnails.get('large', {}).get('url') or (adj_data[0].get('url') if adj_data else None)
-                                    if url_hd:
-                                        try:
-                                            r_img_bytes = requests.get(url_hd).content
-                                            img_io = procesar_imagen_inteligente(r_img_bytes, shape.width, shape.height, con_blur=(s_idx < 2))
-                                            slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
-                                            sp = shape._element; sp.getparent().remove(sp)
-                                        except: pass
+                    f_tipo = record.get('Tipo', 'Sin Tipo')
+                    f_suc = record.get('Sucursal', '000')
+                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                    f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
+                    nom_arch = f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
+                    
+                    status_text.markdown(f"**Procesando:** `{nom_arch}`")
+                    
+                    reemplazos = {
+                        "<<Tipo>>": f_tipo, 
+                        "<<Sucursal>>": f_suc, 
+                        "<<Seccion>>": record.get('Seccion'), 
+                        "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {nombre_mes} de {dt.year}, {record.get('Hora', '').lower()}", 
+                        "<<Concat>>": f_concat
+                    }
 
-                    # Reemplazo de textos con tamaños estáticos
-                    for shape in slide.shapes:
-                        if shape.has_text_frame:
-                            for tag, val in reemplazos.items():
-                                if tag in shape.text_frame.text:
-                                    tf = shape.text_frame; tf.clear()
-                                    run = tf.paragraphs[0].add_run()
-                                    run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                    run.font.size = Pt(mapa_tamanos.get(tag, 11))
+                    prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
+                    
+                    if f_tipo == "Actividad en Sucursal":
+                        adj_lista = record_orig.get("Lista de asistencia")
+                        if not adj_lista or len(adj_lista) == 0:
+                            if len(prs.slides) >= 4:
+                                xml_slides = prs.slides._sldIdLst
+                                xml_slides.remove(xml_slides[3])
 
-                # Guardado y PDF
+                    for s_idx, slide in enumerate(prs.slides):
+                        for shape in list(slide.shapes):
+                            if shape.has_text_frame:
+                                # Imágenes con Auto-Recorte y HD
+                                tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
+                                for tf_tag in tags_foto:
+                                    if f"<<{tf_tag}>>" in shape.text_frame.text:
+                                        adj_data = record_orig.get(tf_tag)
+                                        if adj_data:
+                                            thumbs = adj_data[0].get('thumbnails', {})
+                                            url = thumbs.get('full', {}).get('url') or thumbs.get('large', {}).get('url') or adj_data[0].get('url')
+                                            try:
+                                                r_img = requests.get(url).content
+                                                img_io = procesar_imagen_inteligente(r_img, shape.width, shape.height, con_blur=(s_idx < 2))
+                                                slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
+                                                sp = shape._element; sp.getparent().remove(sp)
+                                            except: pass
+
+                        # TEXTOS TOTALMENTE ESTÁTICOS
+                        for shape in slide.shapes:
+                            if shape.has_text_frame:
+                                for tag, val in reemplazos.items():
+                                    if tag in shape.text_frame.text:
+                                        tf = shape.text_frame
+                                        tf.clear()
+                                        p = tf.paragraphs[0]
+                                        run = p.add_run()
+                                        run.text = str(val)
+                                        run.font.bold = True
+                                        run.font.color.rgb = AZUL_CELESTE
+                                        run.font.size = Pt(mapa_tamanos.get(tag, 11))
+
                 pp_io = BytesIO(); prs.save(pp_io)
                 data_out = generar_pdf(pp_io.getvalue())
                 if data_out:
                     ext = ".pdf" if modo == "Reportes" else ".jpg"
-                    ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
+                    ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nom_arch[:120]}{ext}"
                     zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                 p_bar.progress((i + 1) / len(sel_idx))
-        
-        status_text.success("✅ Generación completa.")
-        st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
+
+            status_text.success("✅ Completado.")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
