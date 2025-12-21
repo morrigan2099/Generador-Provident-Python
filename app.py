@@ -200,7 +200,7 @@ if 'raw_records' in st.session_state:
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
                                         # Tamaños de fuente
-                                        if tag == "<<Tipo>>": run.font.size = Pt(12)
+                                        if tag == "<<Tipo>>": run.font.size = Pt(11)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
 
