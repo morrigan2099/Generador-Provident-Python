@@ -89,7 +89,7 @@ TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71b
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 with st.sidebar:
-    if st.button("💾 GUARDAR JSON", use_container_width=True, type="primary"):
+    if st.button("💾 Guardar Configuración", use_container_width=True, type="primary"):
         guardar_config_json(st.session_state.config)
         st.toast("Configuración guardada")
     st.divider()
@@ -191,5 +191,5 @@ if 'raw_records' in st.session_state:
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
-            status.success(f"✅ ¡{total} archivos con imágenes listos!")
+            status.success(f"✅ ¡{total} archivos generados con éxito!")
             st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_Images_Fixed.zip", use_container_width=True)
