@@ -14,7 +14,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
 # --- CONFIGURACIÓN DE TAMAÑOS (EDITAR AQUÍ) ---
-TAM_TIPO      = 11
+TAM_TIPO      = 70
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
 TAM_CONFECHOR = 11
