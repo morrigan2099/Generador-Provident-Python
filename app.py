@@ -13,8 +13,8 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
-# --- CONFIGURACIÓN DE TAMAÑOS (MODIFICAR DIRECTAMENTE AQUÍ) ---
-TAM_TIPO      = 20
+# --- CONFIGURACIÓN DE TAMAÑOS ---
+TAM_TIPO      = 11
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
 TAM_CONFECHOR = 11
@@ -31,15 +31,20 @@ def cargar_config():
         except: pass
     return {"plantillas": {}}
 
+def obtener_url_alta_calidad(adjunto):
+    """Extrae la versión 'large' de Airtable si existe, si no, la original."""
+    if not adjunto: return None
+    thumbnails = adjunto[0].get('thumbnails', {})
+    # Priorizar 'large' para evitar pixelado, si no, usar la URL original (full)
+    return thumbnails.get('large', {}).get('url') or adjunto[0].get('url')
+
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
     if campo == 'Hora': return str(texto).lower().strip()
-    
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
     if campo == 'Seccion': return t.upper()
-    
     palabras = t.lower().split()
     if not palabras: return ""
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
@@ -57,13 +62,14 @@ def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
     target_w = max(1, int(target_w_pt / 9525))
     target_h = max(1, int(target_h_pt / 9525))
     img = Image.open(BytesIO(img_data)).convert("RGB")
+    # Filtro LANCZOS para máxima nitidez al redimensionar
     fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
     fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
     img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
     offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
     fondo.paste(img, offset)
     output = BytesIO()
-    fondo.save(output, format="JPEG", quality=90)
+    fondo.save(output, format="JPEG", quality=100) # Calidad máxima
     output.seek(0)
     return output
 
@@ -80,10 +86,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v60", layout="wide")
+st.set_page_config(page_title="Provident Pro v61", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v60")
+st.title("🚀 Generador Pro v61 - Alta Calidad")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -93,7 +99,6 @@ with st.sidebar:
     if st.button("💾 GUARDAR PLANTILLAS"):
         with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
         st.toast("Plantillas guardadas")
-    
     st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
@@ -160,7 +165,6 @@ if 'raw_records' in st.session_state:
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
-                    # Regla Hoja 4
                     if f_tipo == "Actividad en Sucursal":
                         adj_lista = record_orig.get("Lista de asistencia")
                         if not adj_lista or (isinstance(adj_lista, list) and len(adj_lista) == 0):
@@ -171,18 +175,18 @@ if 'raw_records' in st.session_state:
                     for s_idx, slide in enumerate(prs.slides):
                         for shape in list(slide.shapes):
                             if shape.has_text_frame:
-                                for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
+                                tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
+                                for tf in tags_foto:
                                     if f"<<{tf}>>" in shape.text_frame.text:
-                                        adj = record_orig.get(tf)
-                                        if adj:
+                                        adj_data = record_orig.get(tf)
+                                        url_hd = obtener_url_alta_calidad(adj_data)
+                                        if url_hd:
                                             try:
-                                                r_img_bytes = requests.get(adj[0].get('url')).content
-                                                # SI ES PÁGINA 3 O 4 (índice 2 y 3), USAR STRETCH (Imagen directa)
-                                                if s_idx >= 2:
+                                                r_img_bytes = requests.get(url_hd).content
+                                                if s_idx >= 2: # STRETCH EN PAG 3 Y 4
                                                     img_io = BytesIO(r_img_bytes)
                                                     slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
-                                                else:
-                                                    # PÁGINAS 1 Y 2 USAN BLUR
+                                                else: # BLUR EN PAG 1 Y 2
                                                     img_final_io = crear_imagen_con_fondo_blur(r_img_bytes, shape.width, shape.height)
                                                     slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
                                                 
