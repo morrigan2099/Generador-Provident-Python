@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import os
 import re
+import numpy as np
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
@@ -11,25 +12,50 @@ import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
 from pdf2image import convert_from_bytes
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps, ImageFilter, ImageStat
 
-# --- CONFIGURACIÓN DE TAMAÑOS (EDITAR AQUÍ) ---
-TAM_TIPO      = 70
+# --- CONFIGURACIÓN DE TAMAÑOS ---
+TAM_TIPO      = 11
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
 TAM_CONFECHOR = 11
 TAM_CONCAT    = 11
 
-# --- UTILIDADES ---
-MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+def recorte_inteligente_bordes(img, umbral_negro=60, margen_analisis=0.05):
+    """
+    Analiza los bordes (margen_analisis % de la imagen).
+    Si el promedio de oscuridad en esa franja supera el umbral_negro %, la recorta.
+    """
+    w, h = img.size
+    img_gray = img.convert('L') # Escala de grises para análisis rápido
+    arr = np.array(img_gray)
+    
+    # Definir límites iniciales
+    top, bottom, left, right = 0, h, 0, w
+    
+    # Grosor de la franja a analizar (5% por defecto)
+    v_strip = int(h * margen_analisis)
+    h_strip = int(w * margen_analisis)
 
-def cargar_config():
-    if os.path.exists("config_app.json"):
-        try:
-            with open("config_app.json", "r") as f: return json.load(f)
-        except: pass
-    return {"plantillas": {}}
+    # Función para calcular % de negro (píxeles < 30 de brillo)
+    def es_franja_negra(seccion):
+        pue_negros = np.sum(seccion < 30) / seccion.size * 100
+        return pue_negros > umbral_negro
+
+    # Analizar Arriba
+    if es_franja_negra(arr[0:v_strip, :]):
+        top = v_strip
+    # Analizar Abajo
+    if es_franja_negra(arr[h-v_strip:h, :]):
+        bottom = h - v_strip
+    # Analizar Izquierda
+    if es_franja_negra(arr[:, 0:h_strip]):
+        left = h_strip
+    # Analizar Derecha
+    if es_franja_negra(arr[:, w-h_strip:w]):
+        right = w - h_strip
+
+    return img.crop((left, top, right, bottom))
 
 def obtener_url_full_calidad(adjunto):
     if not adjunto: return None
@@ -37,35 +63,32 @@ def obtener_url_full_calidad(adjunto):
     return thumbnails.get('full', {}).get('url') or thumbnails.get('large', {}).get('url') or adjunto[0].get('url')
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
-    """Aplica supersampling y compresión optimizada para alta fidelidad."""
-    # Convertir puntos a píxeles base (96 dpi estándar)
     base_w = int(target_w_pt / 9525)
     base_h = int(target_h_pt / 9525)
-    
-    # Supersampling: Procesamos al doble de resolución para nitidez extra
-    render_w = base_w * 2
-    render_h = base_h * 2
+    render_w, render_h = base_w * 2, base_h * 2
     
     img = Image.open(BytesIO(img_data)).convert("RGB")
     
+    # --- APLICAR RECORTE SI EL BORDE ES > 60% NEGRO ---
+    img = recorte_inteligente_bordes(img, umbral_negro=60)
+    
     if con_blur:
-        # Fondo desenfocado
         fondo = ImageOps.fit(img, (render_w, render_h), Image.Resampling.LANCZOS)
         fondo = fondo.filter(ImageFilter.GaussianBlur(radius=10))
-        # Imagen frontal proporcional
         img.thumbnail((render_w, render_h), Image.Resampling.LANCZOS)
         offset = ((render_w - img.width) // 2, (render_h - img.height) // 2)
         fondo.paste(img, offset)
         img_final = fondo
     else:
-        # Modo Stretch (Páginas 3 y 4)
+        # En páginas 3 y 4 estiramos la imagen ya recortada
         img_final = img.resize((render_w, render_h), Image.Resampling.LANCZOS)
 
     output = BytesIO()
-    # Compresión inteligente: Calidad 90 con subsampling 0 (4:4:4) para evitar pixelado en bordes
     img_final.save(output, format="JPEG", quality=90, subsampling=0, optimize=True)
     output.seek(0)
     return output
+
+# ... (Resto de funciones de texto y PDF iguales a v64) ...
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
@@ -100,10 +123,13 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v63", layout="wide")
-if 'config' not in st.session_state: st.session_state.config = cargar_config()
+st.set_page_config(page_title="Provident Pro v65", layout="wide")
+if 'config' not in st.session_state: 
+    if os.path.exists("config_app.json"):
+        with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
+    else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v63 - HD Inteligente")
+st.title("🚀 Generador Pro v65 - Análisis de Bordes 60%")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -175,7 +201,7 @@ if 'raw_records' in st.session_state:
                     f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
                     
-                    status_text.markdown(f"**HD Processing ({i+1}/{total_items}):** `{nom_arch}`")
+                    status_text.markdown(f"**Procesando ({i+1}/{total_items}):** `{nom_arch}`")
                     
                     reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
                                   "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
@@ -201,7 +227,6 @@ if 'raw_records' in st.session_state:
                                         if url_hd:
                                             try:
                                                 r_img_bytes = requests.get(url_hd).content
-                                                # Llamar a la nueva función de procesamiento inteligente
                                                 img_io = procesar_imagen_inteligente(r_img_bytes, shape.width, shape.height, con_blur=(s_idx < 2))
                                                 slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
                                                 sp = shape._element; sp.getparent().remove(sp)
@@ -224,5 +249,5 @@ if 'raw_records' in st.session_state:
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     if total_items > 0: p_bar.progress((i + 1) / total_items)
             
-            status_text.success(f"✅ ¡Proceso HD finalizado! {total_items} archivos listos.")
-            st.download_button("📥 DESCARGAR ZIP HD", zip_buf.getvalue(), f"Provident_HD_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
+            status_text.success(f"✅ Completado.")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
