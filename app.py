@@ -35,28 +35,27 @@ def guardar_config_json(config_data):
 if 'config' not in st.session_state:
     st.session_state.config = cargar_config()
 
-# --- MOTOR DE TEXTO ELEGANTE ---
+# --- MOTOR DE TEXTO ELEGANTE (SIN ACENTOS) ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
-def procesar_texto_maestro(texto, es_seccion=False):
-    """
-    1. Quita acentos.
-    2. Todo a minúsculas.
-    3. Si es Seccion -> UPPER.
-    4. Si no -> Proper Elegante (Mayúsculas tras inicio, punto o paréntesis).
-    """
+def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     
-    # Eliminar acentos y normalizar a minúsculas
+    # 1. Quitar acentos y forzar minúsculas base
     texto = str(texto)
     nfkd = unicodedata.normalize('NFKD', texto)
     texto_limpio = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower().strip()
     
-    if es_seccion:
+    # REGLA ORO: Hora siempre minúscula
+    if campo == 'Hora':
+        return texto_limpio
+    
+    # REGLA ORO: Seccion siempre mayúscula
+    if campo == 'Seccion':
         return texto_limpio.upper()
 
-    # Algoritmo Proper Elegante
+    # 3. Algoritmo Proper Elegante para el resto
     pequenas = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
     tokens = re.split(r'(\s+|\.|\(|\))', texto_limpio)
     resultado = []
@@ -66,7 +65,6 @@ def procesar_texto_maestro(texto, es_seccion=False):
             resultado.append(t)
             continue
         
-        # Determinar si debe ir en Mayúscula
         forzar_mayuscula = False
         if i == 0: forzar_mayuscula = True
         else:
@@ -83,16 +81,32 @@ def procesar_texto_maestro(texto, es_seccion=False):
             
     return "".join(resultado)
 
-# --- UI Y LOGICA ---
-st.set_page_config(page_title="Provident Pro v24", layout="wide")
-st.title("🚀 Generador Pro: Transformación Global Elegante")
+def generar_pdf(pptx_bytes):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
+        tmp.write(pptx_bytes)
+        path = tmp.name
+    try:
+        subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', os.path.dirname(path), path], check=True)
+        pdf_path = path.replace(".pptx", ".pdf")
+        with open(pdf_path, "rb") as f: data = f.read()
+        os.remove(path); os.remove(pdf_path)
+        return data
+    except: return None
 
-# Conexión Airtable (Simplificada para el ejemplo)
+# --- UI ---
+st.set_page_config(page_title="Provident Pro v26", layout="wide")
+st.title("🚀 Generador Pro: Hora Minúscula y Estilo Blindado")
+
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 with st.sidebar:
-    st.header("🔌 Datos")
+    st.header("🔌 Configuración")
+    if st.button("💾 GUARDAR JSON (Vínculos)", use_container_width=True, type="primary"):
+        guardar_config_json(st.session_state.config)
+        st.toast("Vínculos guardados")
+    
+    st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -104,106 +118,85 @@ with st.sidebar:
             if st.button("🔄 CARGAR Y PROCESAR"):
                 r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 raw = r_reg.json().get("records", [])
-                
-                # TRANSFORMACIÓN INMEDIATA DE DATOS
                 procesados = []
                 for r in raw:
                     f = r['fields']
-                    row_limpio = {}
-                    for k, v in f.items():
-                        if k == 'Seccion':
-                            row_limpio[k] = procesar_texto_maestro(v, es_seccion=True)
-                        elif k == 'Fecha':
-                            row_limpio[k] = v # Mantener ISO para cálculos
-                        else:
-                            row_limpio[k] = procesar_texto_maestro(v)
+                    row_limpio = {k: procesar_texto_maestro(v, k) if k != 'Fecha' else v for k, v in f.items()}
                     procesados.append({'id': r['id'], 'fields': row_limpio})
-                
                 st.session_state.raw_records = procesados
                 st.rerun()
 
-# CUERPO PRINCIPAL
+# --- FLUJO ---
 modo = st.radio("1. Acción:", ["Postales", "Reportes"], horizontal=True)
 folder_fisica = os.path.join("Plantillas", modo.upper())
+AZUL_CELESTE = RGBColor(0, 176, 240)
 
 if 'raw_records' in st.session_state:
-    # Preparar DataFrame para tabla
-    rows = []
+    rows_display = []
     for r in st.session_state.raw_records:
         f = r['fields'].copy()
         if 'Fecha' in f:
             dt = datetime.strptime(f['Fecha'], '%Y-%m-%d')
             f['Fecha'] = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year}"
-        rows.append(f)
+        rows_display.append(f)
     
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows_display)
     df.insert(0, "Seleccionar", False)
-    
-    st.subheader("2. Tabla de Registros (Vista Elegante)")
+    st.subheader("2. Registros (Hora minúscula y Proper)")
     df_edit = st.data_editor(df, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_edit.loc[sel_idx, "Tipo"].unique()
-        
         st.subheader("3. Vinculación")
         for t in tipos_sel:
             p_mem = st.session_state.config["plantillas"].get(t)
             idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
-            st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla para {t}:", archivos_pptx, index=idx_def, key=t)
+            st.session_state.config["plantillas"][t] = st.selectbox(f"Tipo: {t}", archivos_pptx, index=idx_def, key=t)
 
         if st.button("🔥 GENERAR ZIP", use_container_width=True, type="primary"):
             zip_buf = BytesIO()
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                 for idx in sel_idx:
                     record = st.session_state.raw_records[idx]['fields']
-                    
-                    # Variables preparadas
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
-                    f_tipo = record.get('Tipo')
-                    f_suc = record.get('Sucursal')
-                    f_seccion = record.get('Seccion')
-                    f_muni = record.get('Municipio')
-                    lugar = record.get('Punto de reunion') if record.get('Punto de reunion') else record.get('Ruta a seguir')
-                    hora = record.get('Hora', '').lower()
                     
-                    # Confechor y Concat con reglas
+                    # Variables (Hora forzada a minúsculas por procesar_texto_maestro)
+                    f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
+                    f_seccion = record.get('Seccion'); f_muni = record.get('Municipio')
+                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                    hora = record.get('Hora')
+                    
                     conf_raw = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {hora}"
-                    f_confechor = procesar_texto_maestro(conf_raw)
+                    f_confechor = procesar_texto_maestro(conf_raw) # Proper elegante sobre la base
                     f_concat = procesar_texto_maestro(f"{lugar}, {f_muni}")
                     
-                    reemplazos = {
-                        "<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": f_seccion,
-                        "<<Confechor>>": f_confechor, "<<Concat>>": f_concat
-                    }
+                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": f_seccion, "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
 
-                    # Cargar PPTX
-                    plantilla_path = os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo])
-                    prs = Presentation(plantilla_path)
+                    prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        tf = shape.text_frame
-                                        tf.auto_size = None
-                                        tf.clear()
+                                        tf = shape.text_frame; tf.auto_size = None; tf.clear()
                                         p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
                                         run = p.add_run(); run.text = val; run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
                                         
-                                        # REGLA TAMAÑO: Tipo (64 a 2 líneas), Sucursal (14), Resto (11)
+                                        # JERARQUÍA: Tipo (64), Sucursal (14), Otros (11)
                                         if tag == "<<Tipo>>": run.font.size = Pt(64)
                                         elif tag == "<<Sucursal>>": run.font.size = Pt(14)
                                         else: run.font.size = Pt(11)
 
-                    # Nombre de archivo
-                    f_nom = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year}"
-                    nom_arch = f"{f_nom} - {f_tipo}, {f_suc} - {lugar}, {f_muni}"
-                    
-                    # Save and PDF (Lógica de conversión omitida por brevedad, se mantiene igual a v23)
+                    nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc} - {procesar_texto_maestro(lugar)}, {f_muni}"
                     pp_io = BytesIO(); prs.save(pp_io)
-                    # ... [Aquí iría la llamada a generar_pdf y zip_f.writestr] ...
+                    data_out = generar_pdf(pp_io.getvalue())
+                    if data_out:
+                        ext = ".pdf" if modo == "Reportes" else ".jpg"
+                        mes_folder = f"{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}"
+                        ruta_zip = f"Provident/{dt.year}/{mes_folder}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
+                        zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
             
-            st.success("✅ Archivos listos.")
-            st.download_button("📥 Descargar", zip_buf.getvalue(), "Provident.zip")
+            st.success("✅ Completado.")
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), "Provident_Pro_v26.zip", use_container_width=True)
