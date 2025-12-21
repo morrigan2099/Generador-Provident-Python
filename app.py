@@ -14,7 +14,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
 # --- CONFIGURACIÓN DE TAMAÑOS (MODIFICAR DIRECTAMENTE AQUÍ) ---
-TAM_TIPO      = 13
+TAM_TIPO      = 20
 TAM_SUCURSAL  = 11
 TAM_SECCION   = 11
 TAM_CONFECHOR = 11
@@ -80,10 +80,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v59", layout="wide")
+st.set_page_config(page_title="Provident Pro v60", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v59")
+st.title("🚀 Generador Pro v60")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -113,7 +113,6 @@ with st.sidebar:
                 ]
                 st.rerun()
 
-# --- PROCESAMIENTO ---
 if 'raw_records' in st.session_state:
     modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
@@ -143,15 +142,7 @@ if 'raw_records' in st.session_state:
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0); zip_buf = BytesIO()
             AZUL_CELESTE = RGBColor(0, 176, 240)
-            
-            # Diccionario mapeando tags a sus variables fijas
-            mapa_tamanos = {
-                "<<Tipo>>": TAM_TIPO,
-                "<<Sucursal>>": TAM_SUCURSAL,
-                "<<Seccion>>": TAM_SECCION,
-                "<<Confechor>>": TAM_CONFECHOR,
-                "<<Concat>>": TAM_CONCAT
-            }
+            mapa_tamanos = {"<<Tipo>>": TAM_TIPO, "<<Sucursal>>": TAM_SUCURSAL, "<<Seccion>>": TAM_SECCION, "<<Confechor>>": TAM_CONFECHOR, "<<Concat>>": TAM_CONCAT}
 
             with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
                 for i, idx in enumerate(sel_idx):
@@ -159,16 +150,13 @@ if 'raw_records' in st.session_state:
                     record_orig = st.session_state.raw_data_original[idx]['fields']
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
-                    
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
                     f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
                     
-                    reemplazos = {
-                        "<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
-                        "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
-                        "<<Concat>>": f_concat
-                    }
+                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
+                                  "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
+                                  "<<Concat>>": f_concat}
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
@@ -180,7 +168,7 @@ if 'raw_records' in st.session_state:
                                 xml_slides = prs.slides._sldIdLst
                                 xml_slides.remove(xml_slides[3])
 
-                    for slide in prs.slides:
+                    for s_idx, slide in enumerate(prs.slides):
                         for shape in list(slide.shapes):
                             if shape.has_text_frame:
                                 for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
@@ -188,12 +176,19 @@ if 'raw_records' in st.session_state:
                                         adj = record_orig.get(tf)
                                         if adj:
                                             try:
-                                                r_img = requests.get(adj[0].get('url')).content
-                                                slide.shapes.add_picture(crear_imagen_con_fondo_blur(r_img, shape.width, shape.height), shape.left, shape.top, shape.width, shape.height)
+                                                r_img_bytes = requests.get(adj[0].get('url')).content
+                                                # SI ES PÁGINA 3 O 4 (índice 2 y 3), USAR STRETCH (Imagen directa)
+                                                if s_idx >= 2:
+                                                    img_io = BytesIO(r_img_bytes)
+                                                    slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
+                                                else:
+                                                    # PÁGINAS 1 Y 2 USAN BLUR
+                                                    img_final_io = crear_imagen_con_fondo_blur(r_img_bytes, shape.width, shape.height)
+                                                    slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
+                                                
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
 
-                        # Aplicar texto con tamaños desde variables de código
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -209,7 +204,5 @@ if 'raw_records' in st.session_state:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
-                    
                     if total_items > 0: p_bar.progress((i + 1) / total_items)
-            
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
