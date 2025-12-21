@@ -52,10 +52,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v45", layout="wide")
+st.set_page_config(page_title="Provident Pro v46", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v45")
+st.title("🚀 Generador Pro v46")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -63,9 +63,9 @@ headers = {"Authorization": f"Bearer {TOKEN}"}
 # --- SIDEBAR (CONEXIÓN) ---
 with st.sidebar:
     st.header("⚙️ Configuración")
-    if st.button("💾 GUARDAR JSON"):
+    if st.button("💾 GUARDAR CONFIG"):
         with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
-        st.toast("Guardado")
+        st.toast("Configuración guardada")
     
     st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -88,26 +88,26 @@ with st.sidebar:
 
 # --- ÁREA PRINCIPAL ---
 if 'raw_records' in st.session_state:
-    # 1. ACCIÓN (PRIMERO)
+    # 1. ACCIÓN
     st.subheader("1. Configurar Acción")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
+    modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
     
     # 2. SELECCIÓN DE REGISTROS
     st.subheader("2. Selección de Registros")
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     
-    # Botones de selección rápida
+    # Botones de selección masiva
     c_sel1, c_sel2, _ = st.columns([1, 1, 4])
     if 'select_all' not in st.session_state: st.session_state.select_all = False
     
-    if c_sel1.button("✅ Seleccionar Todo"): st.session_state.select_all = True; st.rerun()
-    if c_sel2.button("❌ Desmarcar Todo"): st.session_state.select_all = False; st.rerun()
+    if c_sel1.button("✅ Seleccionar Todo"): 
+        st.session_state.select_all = True
+        st.rerun()
+    if c_sel2.button("❌ Desmarcar Todo"): 
+        st.session_state.select_all = False
+        st.rerun()
 
-    cols_v = st.session_state.config.get("columnas_visibles") or list(df_raw.columns)
     df_view = df_full.copy()
-    # Limpiar columnas de adjuntos para la tabla
     for c in df_view.columns:
         if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
@@ -150,13 +150,18 @@ if 'raw_records' in st.session_state:
                     f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
                     f_concat = f"{lugar}, {record.get('Municipio')}"
                     
-                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
-                                  "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
+                    reemplazos = {
+                        "<<Tipo>>": f_tipo, 
+                        "<<Sucursal>>": f_suc, 
+                        "<<Seccion>>": record.get('Seccion'), 
+                        "<<Confechor>>": f_confechor, 
+                        "<<Concat>>": f_concat
+                    }
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
+                        # IMÁGENES
                         for shape in list(slide.shapes):
-                            # IMÁGENES
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_foto:
@@ -168,27 +173,29 @@ if 'raw_records' in st.session_state:
                                             slide.shapes.add_picture(BytesIO(img_d), shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
-                        # TEXTO
+                        # TEXTO (Tamaños: Sucursal 12, Resto 11)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
                                         tf = shape.text_frame; tf.clear()
-                                        run = tf.paragraphs[0].add_run(); run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        if tag == "<<Tipo>>": run.font.size = Pt(11)
-                                        elif tag == "<<Sucursal>>": run.font.size = Pt(14)
-                                        else: run.font.size = Pt(11)
+                                        run = tf.paragraphs[0].add_run()
+                                        run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
+                                        
+                                        if tag == "<<Sucursal>>": 
+                                            run.font.size = Pt(12)
+                                        else: 
+                                            run.font.size = Pt(11)
 
-                    nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc} - {lugar}, {record.get('Municipio')}"
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
                     if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
-                        ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
-                        zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
+                        nombre_zip = f"{f_suc}/{f_tipo}_{f_suc}_{dt.strftime('%Y%m%d')}{ext}"
+                        zip_f.writestr(nombre_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
             status.success(f"✅ ¡{total} archivos listos!")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_v45.zip", use_container_width=True)
+            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_v46.zip", use_container_width=True)
 else:
     st.info("💡 Carga los datos desde la barra lateral para comenzar.")
