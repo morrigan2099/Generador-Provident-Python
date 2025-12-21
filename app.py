@@ -52,15 +52,15 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v46", layout="wide")
+st.set_page_config(page_title="Provident Pro v49", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v46")
+st.title("🚀 Generador Pro v49")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR (CONEXIÓN) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configuración")
     if st.button("💾 GUARDAR CONFIG"):
@@ -88,45 +88,35 @@ with st.sidebar:
 
 # --- ÁREA PRINCIPAL ---
 if 'raw_records' in st.session_state:
-    # 1. ACCIÓN
     st.subheader("1. Configurar Acción")
     modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
     
-    # 2. SELECCIÓN DE REGISTROS
     st.subheader("2. Selección de Registros")
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     
-    # Botones de selección masiva
     c_sel1, c_sel2, _ = st.columns([1, 1, 4])
     if 'select_all' not in st.session_state: st.session_state.select_all = False
     
     if c_sel1.button("✅ Seleccionar Todo"): 
-        st.session_state.select_all = True
-        st.rerun()
+        st.session_state.select_all = True; st.rerun()
     if c_sel2.button("❌ Desmarcar Todo"): 
-        st.session_state.select_all = False
-        st.rerun()
+        st.session_state.select_all = False; st.rerun()
 
     df_view = df_full.copy()
     for c in df_view.columns:
         if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
     
     df_view.insert(0, "Seleccionar", st.session_state.select_all)
-    
-    df_edit = st.data_editor(
-        df_view, use_container_width=True, hide_index=True,
-        column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)}
-    )
+    df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True,
+                             column_config={"Seleccionar": st.column_config.CheckboxColumn("Seleccionar", default=False)})
     
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
-    # 3. GENERACIÓN
     if sel_idx:
         st.subheader("3. Asignación de Plantillas")
         folder_fisica = os.path.join("Plantillas", modo.upper())
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
-        
         for t in tipos_sel:
             p_mem = st.session_state.config["plantillas"].get(t)
             idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
@@ -146,22 +136,24 @@ if 'raw_records' in st.session_state:
                     
                     status.text(f"Procesando {i+1}/{total}: {f_suc}")
                     
-                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
                     f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
-                    f_concat = f"{lugar}, {record.get('Municipio')}"
                     
-                    reemplazos = {
-                        "<<Tipo>>": f_tipo, 
-                        "<<Sucursal>>": f_suc, 
-                        "<<Seccion>>": record.get('Seccion'), 
-                        "<<Confechor>>": f_confechor, 
-                        "<<Concat>>": f_concat
-                    }
+                    # LOGICA CONDICIONAL PARA CONCAT Y NOMBRE
+                    if f_tipo == "Actividad en Sucursal":
+                        f_concat = f"Sucursal {f_suc}"
+                        nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}"
+                    else:
+                        lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                        f_concat = f"{lugar}, {record.get('Municipio')}"
+                        nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc} - {f_concat}"
+                    
+                    reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
+                                  "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
-                        # IMÁGENES
                         for shape in list(slide.shapes):
+                            # IMÁGENES
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_foto:
@@ -173,7 +165,7 @@ if 'raw_records' in st.session_state:
                                             slide.shapes.add_picture(BytesIO(img_d), shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
-                        # TEXTO (Tamaños: Sucursal 12, Resto 11)
+                        # TEXTO (Sucursal 12, Resto 11)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -181,21 +173,18 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        
-                                        if tag == "<<Sucursal>>": 
-                                            run.font.size = Pt(12)
-                                        else: 
-                                            run.font.size = Pt(11)
+                                        if tag == "<<Sucursal>>": run.font.size = Pt(12)
+                                        else: run.font.size = Pt(11)
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
                     if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
-                        nombre_zip = f"{f_suc}/{f_tipo}_{f_suc}_{dt.strftime('%Y%m%d')}{ext}"
-                        zip_f.writestr(nombre_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
+                        ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
+                        zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
             status.success(f"✅ ¡{total} archivos listos!")
-            st.download_button("📥 DESCARGAR ZIP", zip_buf.getvalue(), "Provident_v46.zip", use_container_width=True)
+            st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
 else:
-    st.info("💡 Carga los datos desde la barra lateral para comenzar.")
+    st.info("💡 Carga los datos para comenzar.")
