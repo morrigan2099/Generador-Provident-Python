@@ -18,21 +18,25 @@ MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "ago
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 def cargar_config():
+    default_tamanos = {
+        "<<Tipo>>": 11,
+        "<<Sucursal>>": 11,
+        "<<Seccion>>": 11,
+        "<<Confechor>>": 11,
+        "<<Concat>>": 11
+    }
+    config = {"plantillas": {}, "tamanos": default_tamanos}
+    
     if os.path.exists("config_app.json"):
         try:
-            with open("config_app.json", "r") as f: return json.load(f)
-        except: pass
-    # Default: Todos a 11pts
-    return {
-        "plantillas": {}, 
-        "tamanos": {
-            "<<Tipo>>": 13,
-            "<<Sucursal>>": 11,
-            "<<Seccion>>": 11,
-            "<<Confechor>>": 11,
-            "<<Concat>>": 11
-        }
-    }
+            with open("config_app.json", "r") as f:
+                saved_config = json.load(f)
+                # Fusionar con defaults para evitar llaves faltantes
+                config["plantillas"] = saved_config.get("plantillas", {})
+                config["tamanos"] = saved_config.get("tamanos", default_tamanos)
+        except:
+            pass
+    return config
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
@@ -83,10 +87,11 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v56", layout="wide")
-if 'config' not in st.session_state: st.session_state.config = cargar_config()
+st.set_page_config(page_title="Provident Pro v57", layout="wide")
+if 'config' not in st.session_state: 
+    st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v56")
+st.title("🚀 Generador Pro v57")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -95,21 +100,24 @@ headers = {"Authorization": f"Bearer {TOKEN}"}
 with st.sidebar:
     st.header("⚙️ Configuración")
     
-    # SECCIÓN DE TAMAÑOS INDEPENDIENTES
     with st.expander("📏 TAMAÑOS DE FUENTE (PTS)", expanded=True):
-        for key in st.session_state.config["tamanos"].keys():
+        # Usamos una lista de llaves fija para evitar errores de iteración si el dict cambia
+        llaves_tamanos = ["<<Tipo>>", "<<Sucursal>>", "<<Seccion>>", "<<Confechor>>", "<<Concat>>"]
+        for key in llaves_tamanos:
+            val_actual = st.session_state.config["tamanos"].get(key, 11)
             st.session_state.config["tamanos"][key] = st.number_input(
                 f"Tamaño {key}", 
                 min_value=6, max_value=80, 
-                value=st.session_state.config["tamanos"].get(key, 11)
+                value=int(val_actual),
+                key=f"size_{key}"
             )
 
     if st.button("💾 GUARDAR CONFIG"):
-        with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
+        with open("config_app.json", "w") as f:
+            json.dump(st.session_state.config, f)
         st.toast("Configuración guardada")
     
     st.divider()
-    # Conexión Airtable
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -181,7 +189,6 @@ if 'raw_records' in st.session_state:
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
-                    # Regla Diapositiva 4
                     if f_tipo == "Actividad en Sucursal":
                         adj_lista = record_orig.get("Lista de asistencia")
                         if not adj_lista or (isinstance(adj_lista, list) and len(adj_lista) == 0):
@@ -202,7 +209,6 @@ if 'raw_records' in st.session_state:
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
 
-                        # TEXTO: Aplicar tamaños personalizados desde el Sidebar
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -210,7 +216,6 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        # Usar el tamaño configurado en el sidebar
                                         run.font.size = Pt(st.session_state.config["tamanos"].get(tag, 11))
 
                     pp_io = BytesIO(); prs.save(pp_io)
