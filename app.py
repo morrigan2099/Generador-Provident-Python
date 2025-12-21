@@ -27,41 +27,46 @@ def cargar_config():
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
-    # ELIMINAR DIAGONALES y limpiar
+    
+    # Limpieza: eliminar diagonales y normalizar espacios
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
+    
     if campo == 'Seccion': return t.upper()
+    
     palabras = t.lower().split()
     if not palabras: return ""
+    
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
-    res = [palabras[0].capitalize()]
-    for p in palabras[1:]:
-        res.append(p if p in prep else p.capitalize())
-    return " ".join(res)
+    resultado = []
+    
+    for i, p in enumerate(palabras):
+        # Regla: Primera palabra o después de "(" va en Mayúscula
+        es_inicio = (i == 0)
+        despues_parentesis = (i > 0 and "(" in palabras[i-1])
+        
+        if es_inicio or despues_parentesis or (p not in prep):
+            # Si la palabra empieza con "(", capitalizamos la letra que sigue
+            if p.startswith("("):
+                resultado.append("(" + p[1:].capitalize())
+            else:
+                resultado.append(p.capitalize())
+        else:
+            resultado.append(p)
+            
+    return " ".join(resultado)
 
 def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
-    """
-    Crea una imagen que no se estira, con fondo de la misma imagen desenfocado.
-    """
-    # Convertir puntos de PPTX a pixeles aprox (96 dpi)
     target_w = int(target_w_pt / 9525)
     target_h = int(target_h_pt / 9525)
-    
     img = Image.open(BytesIO(img_data)).convert("RGB")
-    
-    # 1. Crear el fondo (Blur)
-    # Hacemos un fit que cubra todo y desenfocamos
+    # Fondo con Zoom y Blur
     fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
     fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
-    
-    # 2. Preparar la imagen frontal (Aspect Ratio original)
+    # Imagen frontal (Aspecto normal)
     img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
-    
-    # 3. Superponer
-    # Centrar la imagen original sobre el fondo borroso
     offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
     fondo.paste(img, offset)
-    
     output = BytesIO()
     fondo.save(output, format="JPEG", quality=90)
     output.seek(0)
@@ -79,22 +84,20 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- UI ---
-st.set_page_config(page_title="Provident Pro v51", layout="wide")
+# --- UI STREAMLIT ---
+st.set_page_config(page_title="Provident Pro v52", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v51: Efecto Blur & 11pts")
+st.title("🚀 Generador Pro v52")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Configuración")
     if st.button("💾 GUARDAR CONFIG"):
         with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
         st.toast("Configuración guardada")
-    
     st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
@@ -114,21 +117,16 @@ with st.sidebar:
                 ]
                 st.rerun()
 
-# --- ÁREA PRINCIPAL ---
 if 'raw_records' in st.session_state:
-    st.subheader("1. Configurar Acción")
+    st.subheader("1. Acción y Selección")
     modo = st.radio("Formato de salida:", ["Postales", "Reportes"], horizontal=True)
     
-    st.subheader("2. Selección de Registros")
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
     c_sel1, c_sel2, _ = st.columns([1, 1, 4])
     if 'select_all' not in st.session_state: st.session_state.select_all = False
     
-    if c_sel1.button("✅ Seleccionar Todo"): 
-        st.session_state.select_all = True; st.rerun()
-    if c_sel2.button("❌ Desmarcar Todo"): 
-        st.session_state.select_all = False; st.rerun()
+    if c_sel1.button("✅ Seleccionar Todo"): st.session_state.select_all = True; st.rerun()
+    if c_sel2.button("❌ Desmarcar Todo"): st.session_state.select_all = False; st.rerun()
 
     df_view = df_full.copy()
     for c in df_view.columns:
@@ -141,7 +139,7 @@ if 'raw_records' in st.session_state:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
-        st.subheader("3. Asignación de Plantillas")
+        st.subheader("2. Plantillas")
         folder_fisica = os.path.join("Plantillas", modo.upper())
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
@@ -150,7 +148,7 @@ if 'raw_records' in st.session_state:
             idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
             st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=f"p_{t}")
 
-        if st.button("🔥 GENERAR ARCHIVOS", use_container_width=True, type="primary"):
+        if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0); status = st.empty(); zip_buf = BytesIO()
             total = len(sel_idx)
             AZUL_CELESTE = RGBColor(0, 176, 240)
@@ -162,7 +160,7 @@ if 'raw_records' in st.session_state:
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
                     
-                    status.text(f"Procesando {i+1}/{total}: {f_suc}")
+                    status.text(f"Procesando: {f_suc}")
                     f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
                     
                     if f_tipo == "Actividad en Sucursal":
@@ -179,7 +177,7 @@ if 'raw_records' in st.session_state:
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
-                            # IMÁGENES CON FONDO BLUR
+                            # IMÁGENES
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_foto:
@@ -188,14 +186,11 @@ if 'raw_records' in st.session_state:
                                     if adj and isinstance(adj, list):
                                         try:
                                             r_img = requests.get(adj[0].get('url')).content
-                                            # Generar la imagen con fondo desenfocado
                                             img_final_io = crear_imagen_con_fondo_blur(r_img, shape.width, shape.height)
-                                            
                                             slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
-                        
-                        # TEXTO (TODO ESTRICTAMENTE A 11PTS)
+                        # TEXTO (TODO A 11PTS)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -203,7 +198,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11)
+                                        run.font.size = Pt(11) # FORZADO 11PTS
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
@@ -215,5 +210,3 @@ if 'raw_records' in st.session_state:
             
             status.success(f"✅ ¡{total} archivos listos!")
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
-else:
-    st.info("💡 Carga los datos para comenzar.")
