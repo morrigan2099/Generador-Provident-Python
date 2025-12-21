@@ -4,16 +4,14 @@ import pandas as pd
 import json
 import os
 import re
-import unicodedata
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
 from pdf2image import convert_from_bytes
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 
 # --- CONFIGURACIÓN Y UTILIDADES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -29,12 +27,10 @@ def cargar_config():
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
-    # Eliminar diagonales y limpiar espacios
+    # ELIMINAR DIAGONALES y limpiar
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
-    
     if campo == 'Seccion': return t.upper()
-    
     palabras = t.lower().split()
     if not palabras: return ""
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
@@ -42,6 +38,34 @@ def procesar_texto_maestro(texto, campo=""):
     for p in palabras[1:]:
         res.append(p if p in prep else p.capitalize())
     return " ".join(res)
+
+def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
+    """
+    Crea una imagen que no se estira, con fondo de la misma imagen desenfocado.
+    """
+    # Convertir puntos de PPTX a pixeles aprox (96 dpi)
+    target_w = int(target_w_pt / 9525)
+    target_h = int(target_h_pt / 9525)
+    
+    img = Image.open(BytesIO(img_data)).convert("RGB")
+    
+    # 1. Crear el fondo (Blur)
+    # Hacemos un fit que cubra todo y desenfocamos
+    fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
+    fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
+    
+    # 2. Preparar la imagen frontal (Aspect Ratio original)
+    img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
+    
+    # 3. Superponer
+    # Centrar la imagen original sobre el fondo borroso
+    offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
+    fondo.paste(img, offset)
+    
+    output = BytesIO()
+    fondo.save(output, format="JPEG", quality=90)
+    output.seek(0)
+    return output
 
 def generar_pdf(pptx_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
@@ -56,10 +80,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI ---
-st.set_page_config(page_title="Provident Pro v50", layout="wide")
+st.set_page_config(page_title="Provident Pro v51", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v50")
+st.title("🚀 Generador Pro v51: Efecto Blur & 11pts")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -139,7 +163,6 @@ if 'raw_records' in st.session_state:
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
                     
                     status.text(f"Procesando {i+1}/{total}: {f_suc}")
-                    
                     f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
                     
                     if f_tipo == "Actividad en Sucursal":
@@ -156,7 +179,7 @@ if 'raw_records' in st.session_state:
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
-                            # IMÁGENES CON RECORTE INTELIGENTE (NO ESTIRAR)
+                            # IMÁGENES CON FONDO BLUR
                             txt_b = shape.text_frame.text if shape.has_text_frame else ""
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf in tags_foto:
@@ -164,23 +187,15 @@ if 'raw_records' in st.session_state:
                                     adj = record_orig.get(tf)
                                     if adj and isinstance(adj, list):
                                         try:
-                                            resp = requests.get(adj[0].get('url'))
-                                            img_orig = Image.open(BytesIO(resp.content))
+                                            r_img = requests.get(adj[0].get('url')).content
+                                            # Generar la imagen con fondo desenfocado
+                                            img_final_io = crear_imagen_con_fondo_blur(r_img, shape.width, shape.height)
                                             
-                                            # Calcular dimensiones del placeholder en pixeles (aprox 96 dpi)
-                                            w_pt, h_pt = shape.width, shape.height
-                                            # FIT: Ajustar manteniendo proporción sin deformar
-                                            img_final = ImageOps.fit(img_orig, (int(w_pt/9525), int(h_pt/9525)), Image.Resampling.LANCZOS)
-                                            
-                                            tmp_img = BytesIO()
-                                            img_final.save(tmp_img, format="JPEG", quality=95)
-                                            tmp_img.seek(0)
-                                            
-                                            slide.shapes.add_picture(tmp_img, shape.left, shape.top, shape.width, shape.height)
+                                            slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
                         
-                        # TEXTO (TODO A 11PTS)
+                        # TEXTO (TODO ESTRICTAMENTE A 11PTS)
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -188,7 +203,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11) # SIEMPRE 11PTS
+                                        run.font.size = Pt(11)
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
