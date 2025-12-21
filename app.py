@@ -28,6 +28,9 @@ def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto 
     
+    # Forzar minúsculas en Hora
+    if campo == 'Hora': return str(texto).lower().strip()
+    
     # Limpieza: eliminar diagonales y normalizar espacios
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
@@ -41,12 +44,10 @@ def procesar_texto_maestro(texto, campo=""):
     resultado = []
     
     for i, p in enumerate(palabras):
-        # Regla: Primera palabra o después de "(" va en Mayúscula
         es_inicio = (i == 0)
         despues_parentesis = (i > 0 and "(" in palabras[i-1])
         
         if es_inicio or despues_parentesis or (p not in prep):
-            # Si la palabra empieza con "(", capitalizamos la letra que sigue
             if p.startswith("("):
                 resultado.append("(" + p[1:].capitalize())
             else:
@@ -60,10 +61,8 @@ def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
     target_w = int(target_w_pt / 9525)
     target_h = int(target_h_pt / 9525)
     img = Image.open(BytesIO(img_data)).convert("RGB")
-    # Fondo con Zoom y Blur
     fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
     fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
-    # Imagen frontal (Aspecto normal)
     img.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
     offset = ((target_w - img.width) // 2, (target_h - img.height) // 2)
     fondo.paste(img, offset)
@@ -85,10 +84,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v52", layout="wide")
+st.set_page_config(page_title="Provident Pro v53", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v52")
+st.title("🚀 Generador Pro v53")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -159,17 +158,25 @@ if 'raw_records' in st.session_state:
                     record_orig = st.session_state.raw_data_original[idx]['fields']
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
+                    f_hora = record.get('Hora', '').lower()
                     
                     status.text(f"Procesando: {f_suc}")
-                    f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora')}"
+                    f_confechor = f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {f_hora}"
+                    
+                    # LOGICA DE CONCATENACIÓN (Ignora None/Vacíos)
+                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                    municipio = record.get('Municipio')
+                    
+                    lista_concat = [str(x) for x in [lugar, municipio] if x and str(x).lower() != 'none']
+                    f_concat_base = ", ".join(lista_concat)
                     
                     if f_tipo == "Actividad en Sucursal":
                         f_concat = f"Sucursal {f_suc}"
                         nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}"
                     else:
-                        lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
-                        f_concat = f"{lugar}, {record.get('Municipio')}"
-                        nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc} - {f_concat}"
+                        f_concat = f_concat_base
+                        nombre_partes = [f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year}", f_tipo, f_suc, f_concat]
+                        nom_arch = " - ".join([str(p) for p in nombre_partes if p and str(p).lower() != 'none'])
                     
                     reemplazos = {"<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
                                   "<<Confechor>>": f_confechor, "<<Concat>>": f_concat}
@@ -190,7 +197,7 @@ if 'raw_records' in st.session_state:
                                             slide.shapes.add_picture(img_final_io, shape.left, shape.top, shape.width, shape.height)
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
-                        # TEXTO (TODO A 11PTS)
+                        # TEXTO
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -198,7 +205,9 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11) # FORZADO 11PTS
+                                        # TAMAÑOS
+                                        if tag == "<<Tipo>>": run.font.size = Pt(12)
+                                        else: run.font.size = Pt(11)
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
@@ -208,5 +217,5 @@ if 'raw_records' in st.session_state:
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
                     p_bar.progress((i + 1) / total)
             
-            status.success(f"✅ ¡{total} archivos listos!")
+            status.success(f"✅ ¡Archivos generados!")
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
