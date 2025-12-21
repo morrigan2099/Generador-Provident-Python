@@ -13,30 +13,24 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
-# --- CONFIGURACIÓN Y UTILIDADES ---
+# --- CONFIGURACIÓN DE TAMAÑOS (VARIABLES INDEPENDIENTES EN CÓDIGO) ---
+# Puedes cambiar estos valores base aquí directamente
+SIZE_TIPO = 11
+SIZE_SUCURSAL = 11
+SIZE_SECCION = 11
+SIZE_CONFECHOR = 11
+SIZE_CONCAT = 11
+
+# --- UTILIDADES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 def cargar_config():
-    default_tamanos = {
-        "<<Tipo>>": 11,
-        "<<Sucursal>>": 11,
-        "<<Seccion>>": 11,
-        "<<Confechor>>": 11,
-        "<<Concat>>": 11
-    }
-    config = {"plantillas": {}, "tamanos": default_tamanos}
-    
     if os.path.exists("config_app.json"):
         try:
-            with open("config_app.json", "r") as f:
-                saved_config = json.load(f)
-                # Fusionar con defaults para evitar llaves faltantes
-                config["plantillas"] = saved_config.get("plantillas", {})
-                config["tamanos"] = saved_config.get("tamanos", default_tamanos)
-        except:
-            pass
-    return config
+            with open("config_app.json", "r") as f: return json.load(f)
+        except: pass
+    return {"plantillas": {}}
 
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
@@ -87,35 +81,37 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v57", layout="wide")
-if 'config' not in st.session_state: 
-    st.session_state.config = cargar_config()
+st.set_page_config(page_title="Provident Pro v58", layout="wide")
+if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v57")
+st.title("🚀 Generador Pro v58")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR: CONFIGURACIÓN ---
 with st.sidebar:
     st.header("⚙️ Configuración")
     
-    with st.expander("📏 TAMAÑOS DE FUENTE (PTS)", expanded=True):
-        # Usamos una lista de llaves fija para evitar errores de iteración si el dict cambia
-        llaves_tamanos = ["<<Tipo>>", "<<Sucursal>>", "<<Seccion>>", "<<Confechor>>", "<<Concat>>"]
-        for key in llaves_tamanos:
-            val_actual = st.session_state.config["tamanos"].get(key, 11)
-            st.session_state.config["tamanos"][key] = st.number_input(
-                f"Tamaño {key}", 
-                min_value=6, max_value=80, 
-                value=int(val_actual),
-                key=f"size_{key}"
-            )
+    # APARTADO MANUAL DE TAMAÑOS (Independientes)
+    with st.expander("📏 TAMAÑOS DE FUENTE", expanded=True):
+        t_tipo = st.number_input("Tamaño <<Tipo>>", 6, 80, SIZE_TIPO)
+        t_sucursal = st.number_input("Tamaño <<Sucursal>>", 6, 80, SIZE_SUCURSAL)
+        t_seccion = st.number_input("Tamaño <<Seccion>>", 6, 80, SIZE_SECCION)
+        t_confechor = st.number_input("Tamaño <<Confechor>>", 6, 80, SIZE_CONFECHOR)
+        t_concat = st.number_input("Tamaño <<Concat>>", 6, 80, SIZE_CONCAT)
+        
+    # Diccionario local de tamaños para el proceso
+    dict_tamanos = {
+        "<<Tipo>>": t_tipo,
+        "<<Sucursal>>": t_sucursal,
+        "<<Seccion>>": t_seccion,
+        "<<Confechor>>": t_confechor,
+        "<<Concat>>": t_concat
+    }
 
-    if st.button("💾 GUARDAR CONFIG"):
-        with open("config_app.json", "w") as f:
-            json.dump(st.session_state.config, f)
-        st.toast("Configuración guardada")
+    if st.button("💾 GUARDAR PLANTILLAS"):
+        with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
+        st.toast("Configuración de plantillas guardada")
     
     st.divider()
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -136,11 +132,10 @@ with st.sidebar:
                 ]
                 st.rerun()
 
-# --- CUERPO PRINCIPAL ---
+# --- PROCESO ---
 if 'raw_records' in st.session_state:
     modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
     df_view = df_full.copy()
     for c in df_view.columns:
         if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
@@ -180,15 +175,14 @@ if 'raw_records' in st.session_state:
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
                     
                     reemplazos = {
-                        "<<Tipo>>": f_tipo, 
-                        "<<Sucursal>>": f_suc, 
-                        "<<Seccion>>": record.get('Seccion'), 
+                        "<<Tipo>>": f_tipo, "<<Sucursal>>": f_suc, "<<Seccion>>": record.get('Seccion'), 
                         "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {MESES_ES[dt.month-1]} de {dt.year}, {record.get('Hora', '').lower()}", 
                         "<<Concat>>": f_concat
                     }
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
+                    # Eliminar Hoja 4 si no hay lista
                     if f_tipo == "Actividad en Sucursal":
                         adj_lista = record_orig.get("Lista de asistencia")
                         if not adj_lista or (isinstance(adj_lista, list) and len(adj_lista) == 0):
@@ -198,6 +192,7 @@ if 'raw_records' in st.session_state:
 
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
+                            # IMÁGENES BLUR
                             if shape.has_text_frame:
                                 for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
                                     if f"<<{tf}>>" in shape.text_frame.text:
@@ -209,6 +204,7 @@ if 'raw_records' in st.session_state:
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
 
+                        # TEXTO: Aplicar tamaños independientes
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -216,7 +212,8 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(st.session_state.config["tamanos"].get(tag, 11))
+                                        # Aplica el tamaño desde las variables del sidebar
+                                        run.font.size = Pt(dict_tamanos.get(tag, 11))
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
