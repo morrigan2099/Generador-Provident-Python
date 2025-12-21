@@ -47,8 +47,8 @@ def procesar_texto_maestro(texto, campo=""):
     return " ".join(resultado)
 
 def crear_imagen_con_fondo_blur(img_data, target_w_pt, target_h_pt):
-    target_w = int(target_w_pt / 9525)
-    target_h = int(target_h_pt / 9525)
+    target_w = max(1, int(target_w_pt / 9525))
+    target_h = max(1, int(target_h_pt / 9525))
     img = Image.open(BytesIO(img_data)).convert("RGB")
     fondo = ImageOps.fit(img, (target_w, target_h), Image.Resampling.LANCZOS)
     fondo = fondo.filter(ImageFilter.GaussianBlur(radius=15))
@@ -73,10 +73,10 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v54", layout="wide")
+st.set_page_config(page_title="Provident Pro v55", layout="wide")
 if 'config' not in st.session_state: st.session_state.config = cargar_config()
 
-st.title("🚀 Generador Pro v54")
+st.title("🚀 Generador Pro v55")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -123,6 +123,7 @@ if 'raw_records' in st.session_state:
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
+        total_items = len(sel_idx)
         folder_fisica = os.path.join("Plantillas", modo.upper())
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
         tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
@@ -142,7 +143,6 @@ if 'raw_records' in st.session_state:
                     dt = datetime.strptime(record.get('Fecha'), '%Y-%m-%d')
                     f_tipo = record.get('Tipo'); f_suc = record.get('Sucursal')
                     
-                    # LOGICA DE CONCAT Y NOMBRE (Ignora None)
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
                     f_concat = f"Sucursal {f_suc}" if f_tipo == "Actividad en Sucursal" else ", ".join([str(x) for x in [lugar, record.get('Municipio')] if x and str(x).lower() != 'none'])
                     nom_arch = f"{dt.day} de {MESES_ES[dt.month-1]} de {dt.year} - {f_tipo}, {f_suc}" + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
@@ -153,18 +153,16 @@ if 'raw_records' in st.session_state:
 
                     prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
                     
-                    # REGLA EXCEPCIÓN: Eliminar Diapositiva 4 si Lista es vacío
+                    # REGLA: Eliminar Hoja 4 si no hay Lista
                     if f_tipo == "Actividad en Sucursal":
-                        lista_asistencia = record_orig.get("Lista de asistencia")
-                        if not lista_asistencia or len(lista_asistencia) == 0:
+                        adj_lista = record_orig.get("Lista de asistencia")
+                        if not adj_lista or (isinstance(adj_lista, list) and len(adj_lista) == 0):
                             if len(prs.slides) >= 4:
-                                rId = prs.slides._sldIdLst[3].rId
-                                prs.part.drop_rel(rId)
-                                del prs.slides._sldIdLst[3]
+                                xml_slides = prs.slides._sldIdLst
+                                xml_slides.remove(xml_slides[3])
 
                     for slide in prs.slides:
                         for shape in list(slide.shapes):
-                            # IMÁGENES
                             if shape.has_text_frame:
                                 for tf in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
                                     if f"<<{tf}>>" in shape.text_frame.text:
@@ -175,7 +173,7 @@ if 'raw_records' in st.session_state:
                                                 slide.shapes.add_picture(crear_imagen_con_fondo_blur(r_img, shape.width, shape.height), shape.left, shape.top, shape.width, shape.height)
                                                 sp = shape._element; sp.getparent().remove(sp)
                                             except: pass
-                        # TEXTO: TODO ESTRICTAMENTE A 11PTS
+
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -183,7 +181,7 @@ if 'raw_records' in st.session_state:
                                         tf = shape.text_frame; tf.clear()
                                         run = tf.paragraphs[0].add_run()
                                         run.text = str(val); run.font.bold = True; run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(11) # ABSOLUTAMENTE TODO A 11PTS
+                                        run.font.size = Pt(11) # SIEMPRE 11PTS
 
                     pp_io = BytesIO(); prs.save(pp_io)
                     data_out = generar_pdf(pp_io.getvalue())
@@ -191,6 +189,8 @@ if 'raw_records' in st.session_state:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         ruta_zip = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {MESES_ES[dt.month-1]}/{modo}/{f_suc}/{nom_arch[:140]}{ext}"
                         zip_f.writestr(ruta_zip, data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes())
-                    p_bar.progress((i + 1) / total)
+                    
+                    if total_items > 0:
+                        p_bar.progress((i + 1) / total_items)
             
             st.download_button("📥 DESCARGAR", zip_buf.getvalue(), f"Provident_{datetime.now().strftime('%H%M%S')}.zip", use_container_width=True)
