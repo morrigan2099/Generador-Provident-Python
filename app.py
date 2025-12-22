@@ -5,6 +5,7 @@ import json
 import os
 import re
 import numpy as np
+import textwrap # NUEVO: Para manejar saltos de línea inteligentes
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
@@ -14,11 +15,11 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
-# --- CONFIGURACIÓN DE TAMAÑOS ESTÁTICOS (SIN AJUSTES AUTOMÁTICOS) ---
-TAM_TIPO      = 64
-TAM_SUCURSAL  = 11
+# --- CONFIGURACIÓN DE TAMAÑOS ---
+TAM_TIPO_BASE = 64  # Tamaño base, se reducirá dinámicamente
+TAM_SUCURSAL  = 12  # Fijo solicitado (11 o 12)
 TAM_SECCION   = 11
-TAM_CONFECHOR = 11
+TAM_CONFECHOR = 11  # El tamaño en ppt, aunque tiene 2 líneas
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
@@ -27,7 +28,7 @@ MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
-# 🔴 ÚNICO CAMBIO REAL: RECORTE POR FILAS Y COLUMNAS NEGRAS
+# 🔴 LÓGICA DE RECORTE IMAGEN
 # ============================================================
 
 def recorte_inteligente_bordes(img, umbral_negro=60):
@@ -66,6 +67,49 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
         return img
 
     return img.crop((left, top, right + 1, bottom + 1))
+
+# --- FUNCIONES DE LÓGICA DE NEGOCIO (NUEVAS) ---
+
+def procesar_confechor_logica(fecha_dt, hora_str):
+    """
+    Aplica la regla estricta:
+    1. Fecha: dd de Mes \n de AAAA
+    2. Hora: Quita 0 inicial.
+    3. AM/PM: 8 a 11 es a.m., el resto p.m.
+    """
+    # PARTE 1: FECHA
+    # Mapeo seguro de meses
+    nombre_mes = MESES_ES[fecha_dt.month - 1]
+    dia = fecha_dt.day
+    anio = fecha_dt.year
+    
+    linea_fecha_1 = f"{dia} de {nombre_mes}"
+    linea_fecha_2_inicio = f"de {anio}, "
+    
+    # PARTE 2: HORA
+    hora_final = ""
+    if hora_str and str(hora_str).lower() != "none":
+        # Tomamos HH:mm (primeros 5 chars)
+        hh_mm = str(hora_str)[0:5] 
+        try:
+            parts = hh_mm.split(':')
+            horas = int(parts[0])
+            minutos = parts[1]
+            
+            # REGLA ESTRICTA: 8 a 11 es a.m., el resto p.m.
+            if 8 <= horas <= 11:
+                sufijo = "a.m."
+            else:
+                sufijo = "p.m."
+            
+            # Quitar 0 inicial al convertir a string
+            hora_num = str(horas)
+            
+            hora_final = f"{hora_num}:{minutos} {sufijo}"
+        except:
+            hora_final = hh_mm # Fallback si falla el parseo
+            
+    return f"{linea_fecha_1}\n{linea_fecha_2_inicio}{hora_final}"
 
 # --- FUNCIONES DE IMAGEN ---
 
@@ -153,7 +197,7 @@ if 'config' not in st.session_state:
     else:
         st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v69 - Estático 100%")
+st.title("🚀 Generador Pro v69 - Modificado")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -246,8 +290,10 @@ if 'raw_records' in st.session_state:
             zip_buf = BytesIO()
 
             AZUL_CELESTE = RGBColor(0, 176, 240)
+            
+            # NOTA: Los tamaños base se definen aquí, pero se alterarán dinámicamente
             mapa_tamanos = {
-                "<<Tipo>>": TAM_TIPO,
+                "<<Tipo>>": TAM_TIPO_BASE,
                 "<<Sucursal>>": TAM_SUCURSAL,
                 "<<Seccion>>": TAM_SECCION,
                 "<<Confechor>>": TAM_CONFECHOR,
@@ -259,6 +305,7 @@ if 'raw_records' in st.session_state:
                     record = st.session_state.raw_records[idx]['fields']
                     record_orig = st.session_state.raw_data_original[idx]['fields']
 
+                    # 1. Procesar Fecha
                     try:
                         raw_fecha = record.get('Fecha', '2025-01-01')
                         dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
@@ -267,19 +314,25 @@ if 'raw_records' in st.session_state:
                         dt = datetime.now()
                         nombre_mes = "error"
 
+                    # 2. Procesar Datos Básicos
                     f_tipo = record.get('Tipo', 'Sin Tipo')
                     f_suc = record.get('Sucursal', '000')
                     lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
 
-                    f_concat = (
-                        f"Sucursal {f_suc}"
-                        if f_tipo == "Actividad en Sucursal"
-                        else ", ".join([
-                            str(x) for x in [lugar, record.get('Municipio')]
-                            if x and str(x).lower() != 'none'
-                        ])
-                    )
+                    # 3. Lógica CONCAT (Dinámico sin exagerar)
+                    # Usamos textwrap.shorten para asegurar que no se extienda infinitamente
+                    texto_lugares = ", ".join([
+                        str(x) for x in [lugar, record.get('Municipio')]
+                        if x and str(x).lower() != 'none'
+                    ])
+                    
+                    if f_tipo == "Actividad en Sucursal":
+                        f_concat = f"Sucursal {f_suc}"
+                    else:
+                        # Limitamos visualmente para que no "exagere"
+                        f_concat = textwrap.shorten(texto_lugares, width=50, placeholder="...")
 
+                    # Nombre de archivo
                     nom_arch = (
                         f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
                         + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
@@ -287,11 +340,20 @@ if 'raw_records' in st.session_state:
 
                     status_text.markdown(f"**Procesando:** `{nom_arch}`")
 
+                    # 4. Lógica CONFECHOR y TIPO (Preparación)
+                    
+                    # Tipo: Forzamos salto de línea si es muy largo (aprox 25 caracteres por línea)
+                    # Esto ayuda al "dinámico adaptable a 2 líneas"
+                    f_tipo_procesado = textwrap.fill(f_tipo, width=30)
+                    
+                    # Confechor: Nueva función
+                    f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
+
                     reemplazos = {
-                        "<<Tipo>>": f_tipo,
+                        "<<Tipo>>": f_tipo_procesado,
                         "<<Sucursal>>": f_suc,
                         "<<Seccion>>": record.get('Seccion'),
-                        "<<Confechor>>": f"{DIAS_ES[dt.weekday()]} {dt.day} de {nombre_mes} de {dt.year}, {record.get('Hora', '').lower()}",
+                        "<<Confechor>>": f_confechor_procesado,
                         "<<Concat>>": f_concat
                     }
 
@@ -299,6 +361,7 @@ if 'raw_records' in st.session_state:
                         os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo])
                     )
 
+                    # Lógica de eliminación de slide (Actividad en Sucursal)
                     if f_tipo == "Actividad en Sucursal":
                         adj_lista = record_orig.get("Lista de asistencia")
                         if not adj_lista or len(adj_lista) == 0:
@@ -306,6 +369,7 @@ if 'raw_records' in st.session_state:
                                 xml_slides = prs.slides._sldIdLst
                                 xml_slides.remove(xml_slides[3])
 
+                    # --- BUCLE DE FOTOS ---
                     for s_idx, slide in enumerate(prs.slides):
                         for shape in list(slide.shapes):
                             if shape.has_text_frame:
@@ -344,6 +408,7 @@ if 'raw_records' in st.session_state:
                                             except:
                                                 pass
 
+                        # --- BUCLE DE TEXTO (REEMPLAZOS) ---
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
@@ -355,7 +420,19 @@ if 'raw_records' in st.session_state:
                                         run.text = str(val)
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
-                                        run.font.size = Pt(mapa_tamanos.get(tag, 11))
+                                        
+                                        # LÓGICA DE TAMAÑO DINÁMICO
+                                        final_size = mapa_tamanos.get(tag, 11)
+                                        
+                                        # Si es TIPO y es muy largo, reducimos tamaño
+                                        if tag == "<<Tipo>>":
+                                            if len(f_tipo) > 50:
+                                                final_size = 36 # Muy largo
+                                            elif len(f_tipo) > 30:
+                                                final_size = 48 # Largo medio
+                                            # Si es corto, mantiene el base (64)
+                                        
+                                        run.font.size = Pt(final_size)
 
                     pp_io = BytesIO()
                     prs.save(pp_io)
