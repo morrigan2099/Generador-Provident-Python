@@ -17,12 +17,14 @@ from datetime import datetime
 from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
+from collections import Counter
 
 # ============================================================
 #  CONFIGURACIÓN GLOBAL
 # ============================================================
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+# Semana inicia en Lunes (0)
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
@@ -139,14 +141,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v90", layout="wide")
+st.set_page_config(page_title="Provident Pro v91", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v90 - Alta Visibilidad")
+st.title("🚀 Generador Pro v91 - Visual & Estable")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -164,6 +166,7 @@ with st.sidebar:
                 tablas_data = r_tab.json()['tables']
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
+                # Selector inicial
                 tabla_sel = st.selectbox("Tabla Inicial:", list(st.session_state['todas_tablas'].keys()))
                 
                 if st.button("🔄 CARGAR DATOS", type="primary"):
@@ -201,7 +204,6 @@ else:
     if modulo == "📮 Postales":
         st.subheader("📮 Generador de Postales")
         
-        # Selección
         df_view = df_full.copy()
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
@@ -213,7 +215,6 @@ else:
         df_edit = st.data_editor(df_view, hide_index=True, use_container_width=True)
         sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
         
-        # Configuración
         if sel_idx:
             folder = os.path.join("Plantillas", "POSTALES")
             if not os.path.exists(folder): os.makedirs(folder)
@@ -282,7 +283,7 @@ else:
                         imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg')
                         with BytesIO() as b: imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True); fbytes = b.getvalue()
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Postales/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs})
+                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs, "Tipo":f_tipo})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
 
@@ -291,7 +292,6 @@ else:
     # --------------------------------------------------------
     elif modulo == "📄 Reportes":
         st.subheader("📄 Generador de Reportes")
-        # Selección (Duplicada para independencia)
         df_view = df_full.copy()
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
@@ -369,7 +369,7 @@ else:
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Reportes/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs})
+                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs, "Tipo":f_tipo})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
 
@@ -406,29 +406,36 @@ else:
 
         # 2. PROCESAMIENTO DE FECHAS
         fechas_oc = {}
+        # Para el calendario, usamos un contador para saber cuál es el mes predominante en los datos
+        fechas_lista = []
+        
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
                 if f not in fechas_oc: fechas_oc[f] = []
                 th = None
-                # SOLO POSTAL (ESTRICTO)
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
                 fechas_oc[f].append({"id":r['id'], "thumb":th})
+                fechas_lista.append(f)
 
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
-            first_date_str = list(fechas_oc.keys())[0]
-            dt_ref = datetime.strptime(first_date_str, '%Y-%m-%d')
-            anio_cal = dt_ref.year
-            mes_cal = dt_ref.month
+            # Detectar Mes/Año predominante
+            fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
+            # Convertir a (Año, Mes) y contar
+            meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
+            # Obtener el más común (el que tiene más registros)
+            anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
 
             # 3. DIBUJAR CALENDARIO (CSS GRID RESPONSIVE ALTA VISIBILIDAD)
+            # firstweekday=0 es Lunes
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(anio_cal, mes_cal)
             
+            # CSS AJUSTADO PARA ALTA VISIBILIDAD
             st.markdown("""
             <style>
             .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -436,7 +443,7 @@ else:
             .cal-cell { 
                 border: 1px solid #ddd; 
                 border-radius: 4px; 
-                min-height: 120px; /* Mas alto para numeros grandes */
+                min-height: 110px; 
                 display: flex; 
                 flex-direction: column; 
                 align-items: center; 
@@ -447,48 +454,48 @@ else:
             }
             .cal-active { background: #e8f4f8; border-color: #00b0f0; }
             
-            /* NUMEROS GIGANTES PARA ALTA VISIBILIDAD */
+            /* DÍA GRANDE Y CLARO */
             .day-n { 
                 font-weight: 900; 
-                font-size: 1.8em; /* GIGANTE */
+                font-size: 1.3em; /* Grande pero seguro */
                 margin-bottom: 2px; 
                 color: #000000;
-                text-shadow: 1px 1px 0px #fff;
                 z-index: 10;
             }
             
             .cal-img { 
                 width: 100%; 
-                height: 70px; 
+                height: 65px; 
                 object-fit: cover; 
                 border-radius: 2px; 
                 margin-bottom: 2px;
-                opacity: 0.9;
             }
             
-            /* INDICADOR "+ N" GIGANTE */
+            /* INDICADOR +N ROJO Y VISIBLE */
             .cal-more { 
-                font-size: 1.3em; /* GIGANTE */
-                color: #D80000; /* ROJO FUERTE */
+                font-size: 1.1em; 
+                color: #D80000; /* Rojo fuerte */
                 font-weight: 900; 
-                margin-top: -15px;
-                background-color: rgba(255,255,255,0.8);
+                margin-top: -10px;
+                background-color: rgba(255,255,255,0.9); /* Fondo para leerse sobre foto */
                 border-radius: 4px;
-                padding: 0 5px;
+                padding: 0 4px;
                 z-index: 20;
             }
             
-            .no-img { font-size: 0.6em; color: #999; margin-top: 15px; }
+            .no-img { font-size: 0.7em; color: #999; margin-top: 10px; font-style: italic; }
             
             @media (max-width: 600px) {
-                .day-n { font-size: 1.2em; }
-                .cal-more { font-size: 1.0em; }
-                .cal-cell { min-height: 80px; }
+                .day-n { font-size: 1.1em; }
+                .cal-more { font-size: 0.9em; }
+                .cal-cell { min-height: 70px; }
+                .cal-img { height: 40px; }
             }
             </style>
             """, unsafe_allow_html=True)
 
             html = "<div class='cal-grid'>"
+            # Headers
             dias_sem = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
             for d in dias_sem: html += f"<div class='cal-header'>{d}</div>"
             
@@ -503,7 +510,8 @@ else:
                         cell_content = f"<div class='day-n'>{day}</div>"
                         if acts:
                             if acts[0]['thumb']: cell_content += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
-                            else: cell_content += "<div class='no-img'>Sin img</div>"
+                            else: cell_content += "<div class='no-img'>Sin foto</div>"
+                            
                             if len(acts) > 1: cell_content += f"<div class='cal-more'>+ {len(acts)-1}</div>"
                         
                         html += f"<div class='cal-cell {active_cls}'>{cell_content}</div>"
