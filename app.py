@@ -18,20 +18,17 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-
-# 1. TAMAÑOS FIJOS (No cambian)
 TAM_TIPO_BASE = 12  
 TAM_SECCION   = 12
 
-# 2. TAMAÑO MEDIANO FIJO (Para Conhora)
-# Se mantendrá en este número. La caja crecerá si es necesario, pero la letra no cambia.
-TAM_MEDIANO_FIJO = 28
+# TAMAÑOS SUCURSAL
+TAM_SUCURSAL_REPORTE = 12 
+TAM_SUCURSAL_POSTAL  = 18 
 
-# 3. TAMAÑOS "RELLENAR PLACEHOLDER" (Start Huge -> Shrink to Fit)
-# Iniciamos con un número GIGANTE. La propiedad 'normAutofit' lo reducirá
-# hasta que toque los bordes del cuadro.
-TAM_RELLENO_MAX = 80  # Para Sucursal (Queremos que llene todo)
-TAM_RELLENO_MID = 32  # Para Concat, Confecha, etc.
+# TAMAÑOS DE RELLENO
+TAM_MEDIANO_FIJO = 15  # Para Conhora
+TAM_RELLENO_MAX  = 80  # Para Sucursal
+TAM_RELLENO_MID  = 24  # Para Concat, Confecha, etc.
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -62,27 +59,67 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
 # --- FUNCIONES DE LÓGICA DE NEGOCIO ---
 
 def obtener_fecha_texto(fecha_dt):
+    # Formato: dddd dd 'de' mmmm 'de' aaaa
     dia_idx = fecha_dt.weekday()
     nombre_dia = DIAS_ES[dia_idx]
     nombre_mes = MESES_ES[fecha_dt.month - 1]
     return f"{nombre_dia} {fecha_dt.day} de {nombre_mes} de {fecha_dt.year}"
 
 def obtener_hora_texto(hora_str):
+    # 🔴 LÓGICA DE HORA CORREGIDA Y ROBUSTA 🔴
     if not hora_str or str(hora_str).lower() == "none": return ""
-    hh_mm = str(hora_str)[0:5] 
-    try:
-        parts = hh_mm.split(':')
-        h_24 = int(parts[0])
-        minutos = parts[1]
-        if 8 <= h_24 <= 11: sufijo = "de la mañana"
-        elif h_24 == 12: sufijo = "del día"
-        elif 13 <= h_24 <= 19: sufijo = "de la tarde"
-        else: sufijo = "p.m." if h_24 >= 12 else "a.m."
-        h_mostrar = h_24
-        if h_24 > 12: h_mostrar = h_24 - 12
-        elif h_24 == 0: h_mostrar = 12
-        return f"{int(h_mostrar)}:{minutos} {sufijo}"
-    except: return hh_mm
+    
+    s_raw = str(hora_str).lower().strip()
+    
+    # 1. Detectar indicadores AM/PM en el texto original
+    es_pm = "p.m." in s_raw or "pm" in s_raw or "p. m." in s_raw
+    es_am = "a.m." in s_raw or "am" in s_raw or "a. m." in s_raw
+    
+    # 2. Extraer horas y minutos con Regex
+    match = re.search(r'(\d{1,2}):(\d{2})', s_raw)
+    
+    if match:
+        h = int(match.group(1))
+        m = match.group(2)
+        
+        # 3. Conversión inteligente a formato 24h para la lógica
+        
+        # Si dice PM y no es 12, sumamos 12 (ej: 1:00 pm -> 13:00)
+        if es_pm and h < 12:
+            h += 12
+        
+        # Si dice AM y es 12, es medianoche (00:00)
+        if es_am and h == 12:
+            h = 0
+            
+        # CASO ESPECIAL USUARIO: "0:00 p.m." -> Esto es Mediodía
+        if h == 0 and es_pm:
+            h = 12
+
+        # 4. Asignar sufijos Provident
+        if 8 <= h <= 11: 
+            sufijo = "de la mañana"
+        elif h == 12: 
+            sufijo = "del día"
+        elif 13 <= h <= 19: 
+            sufijo = "de la tarde"
+        elif h >= 20: 
+            # Opcional: Podrías poner "de la noche" si quisieras, 
+            # pero mantendremos p.m. para ser consistentes con tu lógica previa
+            sufijo = "p.m." 
+        else: 
+            # Madrugada (0 a 7)
+            sufijo = "a.m."
+
+        # 5. Formato visual (12h sin ceros iniciales)
+        h_mostrar = h
+        if h > 12: h_mostrar -= 12
+        if h == 0: h_mostrar = 12
+        
+        return f"{h_mostrar}:{m} {sufijo}"
+    
+    # Si no tiene formato HH:MM detectable, devolvemos el original
+    return hora_str
 
 def obtener_concat_texto(record):
     parts = []
@@ -153,14 +190,14 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v80", layout="wide")
+st.set_page_config(page_title="Provident Pro v81", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v80 - Final")
+st.title("🚀 Generador Pro v81 - Final")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -218,18 +255,14 @@ if 'raw_records' in st.session_state:
             st.session_state.archivos_en_memoria = []
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
-            # CONFIGURACIÓN DE TAMAÑOS FINAL
+            tam_sucursal_actual = TAM_SUCURSAL_POSTAL if modo == "Postales" else TAM_SUCURSAL_REPORTE
+
             mapa_tamanos = {
                 "<<Tipo>>": TAM_TIPO_BASE,
                 "<<Seccion>>": TAM_SECCION,
-                
-                # SUCURSAL: Debe llenar el placeholder (Start Huge + Shrink)
-                "<<Sucursal>>": TAM_RELLENO_MAX, 
-                
-                # CONHORA: Mediano Fijo
-                "<<Conhora>>": TAM_MEDIANO_FIJO,
-                
-                # OTROS: Rellenar (Start Big + Shrink)
+                "<<Sucursal>>": TAM_RELLENO_MAX, # Llenar
+                "<<Conhora>>": TAM_MEDIANO_FIJO, # Mediano fijo
+                # Resto llenar
                 "<<Confecha>>": TAM_RELLENO_MID,
                 "<<Consuc>>": TAM_RELLENO_MID,
                 "<<Concat>>": TAM_RELLENO_MID,
@@ -249,8 +282,9 @@ if 'raw_records' in st.session_state:
                 f_tipo = record.get('Tipo', 'Sin Tipo')
                 f_suc = record.get('Sucursal', '000')
 
-                # PREPARACIÓN VARIABLES
+                # --- VARIABLES ---
                 txt_fecha = obtener_fecha_texto(dt)
+                # Usamos la nueva función robusta para la hora
                 txt_hora  = obtener_hora_texto(record.get('Hora', ''))
                 
                 f_confecha = txt_fecha
@@ -326,13 +360,9 @@ if 'raw_records' in st.session_state:
                                         existing = bodyPr.find(qn(f'a:{child}'))
                                         if existing is not None: bodyPr.remove(existing)
 
-                                    # LÓGICA DE AUTOAJUSTE FINAL
-                                    
-                                    # GRUPO 1: Rellenar cuadro (Sucursal, Concat, etc) -> normAutofit
+                                    # LÓGICA AUTOAJUSTE
                                     if tag in ["<<Sucursal>>", "<<Concat>>", "<<Consuc>>", "<<Confechor>>", "<<Confecha>>"]:
                                         bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                    
-                                    # GRUPO 2: Mediano Fijo (Conhora) o Tipo -> spAutoFit (Resize box, keep font)
                                     elif tag in ["<<Conhora>>", "<<Tipo>>"]:
                                         bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                     
