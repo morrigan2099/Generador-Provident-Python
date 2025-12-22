@@ -63,7 +63,6 @@ def procesar_confechor_logica(fecha_dt, hora_str):
     dia = fecha_dt.day
     anio = fecha_dt.year
     
-    # Construcción limpia de la fecha
     linea_fecha = f"{nombre_mes} {dia} de {anio}"
     
     hora_final = ""
@@ -88,9 +87,7 @@ def procesar_confechor_logica(fecha_dt, hora_str):
         except:
             hora_final = hh_mm
     
-    # 🔴 CORRECCIÓN ESTRICTA DE ESPACIOS
-    # Usamos .strip() para asegurar que no hay espacios al final de la fecha
-    # ni al principio de la hora. Solo queda el \n en medio.
+    # .strip() elimina cualquier espacio residual antes o después
     return f"{linea_fecha.strip()}\n{hora_final.strip()}"
 
 # --- FUNCIONES DE IMAGEN Y TEXTO ---
@@ -163,7 +160,7 @@ def generar_pdf(pptx_bytes):
         return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v71", layout="wide")
+st.set_page_config(page_title="Provident Pro v73", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
@@ -172,7 +169,7 @@ if 'config' not in st.session_state:
     else:
         st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v71 - Final")
+st.title("🚀 Generador Pro v73 - Final")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -259,14 +256,11 @@ if 'raw_records' in st.session_state:
                 key=f"p_{t}"
             )
 
-        # --- SECCIÓN DE GENERACIÓN Y LISTA DE SELECCIÓN ---
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0)
             status_text = st.empty()
             
-            # Limpiamos memoria anterior
             st.session_state.archivos_en_memoria = []
-            
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
             mapa_tamanos = {
@@ -303,7 +297,6 @@ if 'raw_records' in st.session_state:
                 else:
                     f_concat = texto_lugares
 
-                # Nombre base del archivo
                 nom_arch_base = (
                     f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
                     + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
@@ -371,14 +364,13 @@ if 'raw_records' in st.session_state:
                             for tag, val in reemplazos.items():
                                 if tag in shape.text_frame.text:
                                     
-                                    # Mover Tipo y Sucursal 2pt arriba
+                                    # Mover 2pt hacia arriba Tipo y Sucursal
                                     if tag in ["<<Tipo>>", "<<Sucursal>>"]:
                                         shape.top = shape.top - Pt(2)
                                     
                                     tf = shape.text_frame
                                     tf.word_wrap = True 
                                     
-                                    # XML Autoajuste
                                     bodyPr = tf._element.bodyPr
                                     for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                         existing = bodyPr.find(qn(f'a:{child}'))
@@ -395,7 +387,6 @@ if 'raw_records' in st.session_state:
                                     
                                     if tag == "<<Confechor>>": 
                                         p.alignment = PP_ALIGN.CENTER
-                                        # Espaciado de párrafo 0 absoluto
                                         p.space_before = Pt(0)
                                         p.space_after = Pt(0)
                                         p.line_spacing = 1.0 
@@ -412,12 +403,24 @@ if 'raw_records' in st.session_state:
                 data_out = generar_pdf(pp_io.getvalue())
                 
                 if data_out:
-                    ext = ".pdf" if modo == "Reportes" else ".jpg"
-                    bytes_finales = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
+                    # 🔴 CAMBIO: EXTENSIÓN .PNG PARA POSTALES 🔴
+                    ext = ".pdf" if modo == "Reportes" else ".png"
                     nombre_archivo = f"{nom_arch_base[:120]}{ext}"
-                    
-                    # Ruta Interna del ZIP (Árbol limpio)
                     ruta_zip = f"{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nombre_archivo}"
+
+                    if modo == "Reportes":
+                        bytes_finales = data_out
+                        mime_type = "application/pdf"
+                    else:
+                        # 🔴 CONVERSIÓN A PNG REAL (OPTIMIZADO) 🔴
+                        images = convert_from_bytes(data_out, dpi=200, fmt='png') 
+                        img_pil = images[0]
+                        
+                        with BytesIO() as img_buf:
+                            # Guardamos como PNG
+                            img_pil.save(img_buf, format="PNG", optimize=True)
+                            bytes_finales = img_buf.getvalue()
+                        mime_type = "image/png"
 
                     st.session_state.archivos_en_memoria.append({
                         "Seleccionar": True,
@@ -425,14 +428,15 @@ if 'raw_records' in st.session_state:
                         "RutaZip": ruta_zip,
                         "Datos": bytes_finales,
                         "Sucursal": f_suc,
-                        "Tipo": f_tipo
+                        "Tipo": f_tipo,
+                        "Mime": mime_type
                     })
 
                 p_bar.progress((i + 1) / len(sel_idx))
             
             status_text.success("✅ Generación lista. Selecciona archivos abajo.")
 
-        # --- GESTOR DE DESCARGA CON CHECKBOXES ---
+        # --- GESTOR DE DESCARGAS ---
         if "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria) > 0:
             st.divider()
             st.subheader("📋 Selecciona los archivos a descargar")
