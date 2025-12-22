@@ -18,18 +18,19 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-# ESTRATEGIA: Para "Rellenar el placeholder", ponemos tamaños GRANDES.
-# La propiedad 'normAutofit' reducirá este tamaño automáticamente si el texto es largo.
-TAM_TIPO_BASE = 12   # ESTE SE MANTIENE FIJO EN 12 (Pedido explícitamente)
-TAM_SUCURSAL  = 12   # ESTE SE MANTIENE FIJO EN 12
+# Tamaños base para que intenten rellenar el placeholder.
+# El código aplicará 'normAutofit' (Shrink text on overflow) para que no se desborden.
+TAM_TIPO_BASE = 12  
 TAM_SECCION   = 12
-TAM_CONFECHOR = 24   # INICIA GRANDE para rellenar (2 líneas)
-TAM_CONCAT    = 20   # INICIA GRANDE para rellenar todo el cuadro
+TAM_SUCURSAL_REPORTE = 12
+TAM_SUCURSAL_POSTAL  = 18 
+
+# Tamaños iniciales grandes para CONFECHA, CONHORA, CONCAT, CONSUC
+TAM_DATA_LARGE = 20  
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-# Lunes es index 0 en python weekday()
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
@@ -61,54 +62,66 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
 
 # --- FUNCIONES DE LÓGICA DE NEGOCIO ---
 
-def procesar_confechor_logica(fecha_dt, hora_str):
-    # Lógica solicitada:
-    # Confecha = dddd dd 'de' mmmm 'de' aaaa
+def obtener_confecha(fecha_dt):
+    # Formato: dddd dd 'de' mmmm 'de' aaaa
     # Ejemplo: lunes 22 de diciembre de 2025
-    
-    dia_idx = fecha_dt.weekday() # 0 = Lunes
+    dia_idx = fecha_dt.weekday()
     nombre_dia = DIAS_ES[dia_idx]
     nombre_mes = MESES_ES[fecha_dt.month - 1]
-    dia = fecha_dt.day
-    anio = fecha_dt.year
-    
-    linea_fecha = f"{nombre_dia} {dia} de {nombre_mes} de {anio}"
-    
-    # Conhora = Formato 12h con sufijos verbales
-    hora_final = ""
-    if hora_str and str(hora_str).lower() != "none":
-        hh_mm = str(hora_str)[0:5] 
-        try:
-            parts = hh_mm.split(':')
-            h_24 = int(parts[0])
-            minutos = parts[1]
-            
-            if 8 <= h_24 <= 11: sufijo = "de la mañana"
-            elif h_24 == 12: sufijo = "del día"
-            elif 13 <= h_24 <= 19: sufijo = "de la tarde"
-            else: sufijo = "p.m." if h_24 >= 12 else "a.m."
+    return f"{nombre_dia} {fecha_dt.day} de {nombre_mes} de {fecha_dt.year}"
 
-            h_mostrar = h_24
-            if h_24 > 12: h_mostrar = h_24 - 12
-            elif h_24 == 0: h_mostrar = 12
-            
-            h_str = str(h_mostrar)
-            hora_final = f"{h_str}:{minutos} {sufijo}"
-        except:
-            hora_final = hh_mm
+def obtener_conhora(hora_str):
+    # Formato 12h con sufijos verbales
+    if not hora_str or str(hora_str).lower() == "none":
+        return ""
     
-    # Retorna un solo bloque con salto de línea limpio
-    return f"{linea_fecha.strip()}\n{hora_final.strip()}"
+    hh_mm = str(hora_str)[0:5] 
+    try:
+        parts = hh_mm.split(':')
+        h_24 = int(parts[0])
+        minutos = parts[1]
+        
+        if 8 <= h_24 <= 11: sufijo = "de la mañana"
+        elif h_24 == 12: sufijo = "del día"
+        elif 13 <= h_24 <= 19: sufijo = "de la tarde"
+        else: sufijo = "p.m." if h_24 >= 12 else "a.m."
 
-# --- FUNCIONES DE IMAGEN Y TEXTO ---
+        h_mostrar = h_24
+        if h_24 > 12: h_mostrar = h_24 - 12
+        elif h_24 == 0: h_mostrar = 12
+        
+        # Eliminar ceros a la izquierda en la hora (09 -> 9)
+        return f"{int(h_mostrar)}:{minutos} {sufijo}"
+    except:
+        return hh_mm
+
+def obtener_concat(record):
+    # Concatenar: Punto, Ruta, "Municipio" + dato, "Sección" + dato (Mayus)
+    parts_concat = []
+    
+    val_punto = record.get('Punto de reunion')
+    if val_punto and str(val_punto).lower() != 'none':
+        parts_concat.append(str(val_punto))
+    
+    val_ruta = record.get('Ruta a seguir')
+    if val_ruta and str(val_ruta).lower() != 'none':
+        parts_concat.append(str(val_ruta))
+    
+    val_muni = record.get('Municipio')
+    if val_muni and str(val_muni).lower() != 'none':
+        parts_concat.append(f"Municipio {val_muni}")
+    
+    val_secc = record.get('Seccion')
+    if val_secc and str(val_secc).lower() != 'none':
+        parts_concat.append(f"Sección {str(val_secc).upper()}")
+    
+    return ", ".join(parts_concat)
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
     base_w, base_h = int(target_w_pt / 9525), int(target_h_pt / 9525)
     render_w, render_h = base_w * 2, base_h * 2
-
     img = Image.open(BytesIO(img_data)).convert("RGB")
     img = recorte_inteligente_bordes(img, umbral_negro=60)
-
     if con_blur:
         fondo = ImageOps.fit(img, (render_w, render_h), Image.Resampling.LANCZOS)
         fondo = fondo.filter(ImageFilter.GaussianBlur(radius=10))
@@ -118,7 +131,6 @@ def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=Fal
         img_final = fondo
     else:
         img_final = img.resize((render_w, render_h), Image.Resampling.LANCZOS)
-
     output = BytesIO()
     img_final.save(output, format="JPEG", quality=90, subsampling=0, optimize=True)
     output.seek(0)
@@ -128,18 +140,13 @@ def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     if isinstance(texto, list): return texto
     if campo == 'Hora': return str(texto).lower().strip()
-
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
-    # Convertimos Sección a MAYÚSCULAS desde la carga
     if campo == 'Seccion': return t.upper()
-
     palabras = t.lower().split()
     if not palabras: return ""
-
     prep = ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al']
     resultado = []
-
     for i, p in enumerate(palabras):
         es_inicio = (i == 0)
         despues_parentesis = (i > 0 and "(" in palabras[i-1])
@@ -148,7 +155,6 @@ def procesar_texto_maestro(texto, campo=""):
             else: resultado.append(p.capitalize())
         else:
             resultado.append(p)
-
     return " ".join(resultado)
 
 def generar_pdf(pptx_bytes):
@@ -162,127 +168,89 @@ def generar_pdf(pptx_bytes):
             check=True
         )
         pdf_path = path.replace(".pptx", ".pdf")
-        with open(pdf_path, "rb") as f:
-            data = f.read()
-        os.remove(path)
-        os.remove(pdf_path)
+        with open(pdf_path, "rb") as f: data = f.read()
+        os.remove(path); os.remove(pdf_path)
         return data
-    except:
-        return None
+    except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v75", layout="wide")
+st.set_page_config(page_title="Provident Pro v77", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
-        with open("config_app.json", "r") as f:
-            st.session_state.config = json.load(f)
-    else:
-        st.session_state.config = {"plantillas": {}}
+        with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
+    else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v75 - Final")
-
+st.title("🚀 Generador Pro v77 - Final")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 with st.sidebar:
     st.header("⚙️ Configuración")
     if st.button("💾 GUARDAR PLANTILLAS"):
-        with open("config_app.json", "w") as f:
-            json.dump(st.session_state.config, f)
+        with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
         st.toast("Plantillas guardadas")
-
     st.divider()
-
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         base_sel = st.selectbox("Base:", [""] + list(base_opts.keys()))
         if base_sel:
-            r_tab = requests.get(
-                f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables",
-                headers=headers
-            )
+            r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             tabla_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
             tabla_sel = st.selectbox("Tabla:", list(tabla_opts.keys()))
             if st.button("🔄 CARGAR DATOS"):
-                r_reg = requests.get(
-                    f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}",
-                    headers=headers
-                )
+                r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
                 recs = r_reg.json().get("records", [])
                 st.session_state.raw_data_original = recs
                 st.session_state.raw_records = [
-                    {
-                        'id': r['id'],
-                        'fields': {
-                            k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v)
-                            for k, v in r['fields'].items()
-                        }
-                    }
+                    {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}}
                     for r in recs
                 ]
                 st.rerun()
 
 if 'raw_records' in st.session_state:
     modo = st.radio("Salida:", ["Postales", "Reportes"], horizontal=True)
-
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     df_view = df_full.copy()
-
     for c in df_view.columns:
-        if isinstance(df_view[c].iloc[0], list):
-            df_view.drop(c, axis=1, inplace=True)
-
-    if 'select_all' not in st.session_state:
-        st.session_state.select_all = False
-
+        if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
+    if 'select_all' not in st.session_state: st.session_state.select_all = False
     c1, c2, _ = st.columns([1, 1, 4])
-    if c1.button("✅ Todo"):
-        st.session_state.select_all = True
-        st.rerun()
-    if c2.button("❌ Nada"):
-        st.session_state.select_all = False
-        st.rerun()
-
+    if c1.button("✅ Todo"): st.session_state.select_all = True; st.rerun()
+    if c2.button("❌ Nada"): st.session_state.select_all = False; st.rerun()
     df_view.insert(0, "Seleccionar", st.session_state.select_all)
     df_edit = st.data_editor(df_view, use_container_width=True, hide_index=True)
     sel_idx = df_edit.index[df_edit["Seleccionar"] == True].tolist()
 
     if sel_idx:
         folder_fisica = os.path.join("Plantillas", modo.upper())
-        if not os.path.exists(folder_fisica):
-            os.makedirs(folder_fisica)
-
+        if not os.path.exists(folder_fisica): os.makedirs(folder_fisica)
         archivos_pptx = [f for f in os.listdir(folder_fisica) if f.endswith('.pptx')]
-
         tipos_sel = df_view.loc[sel_idx, "Tipo"].unique()
         for t in tipos_sel:
             p_mem = st.session_state.config["plantillas"].get(t)
             idx_def = archivos_pptx.index(p_mem) if p_mem in archivos_pptx else 0
-            st.session_state.config["plantillas"][t] = st.selectbox(
-                f"Plantilla {t}:",
-                archivos_pptx,
-                index=idx_def,
-                key=f"p_{t}"
-            )
+            st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archivos_pptx, index=idx_def, key=f"p_{t}")
 
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0)
             status_text = st.empty()
-            
             st.session_state.archivos_en_memoria = []
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
-            # MAPA DE TAMAÑOS:
-            # - Tipo y Sucursal: 12 (Fijo)
-            # - Concat y Confechor: 20-24 (Grande con Autoajuste)
+            # Ajuste de tamaño Sucursal según modo
+            tam_sucursal_actual = TAM_SUCURSAL_POSTAL if modo == "Postales" else TAM_SUCURSAL_REPORTE
+
+            # Mapa de Tamaños (Base)
             mapa_tamanos = {
                 "<<Tipo>>": TAM_TIPO_BASE,
-                "<<Sucursal>>": TAM_SUCURSAL,
+                "<<Sucursal>>": tam_sucursal_actual,
                 "<<Seccion>>": TAM_SECCION,
-                "<<Confechor>>": TAM_CONFECHOR,
-                "<<Concat>>": TAM_CONCAT
+                "<<CONFECHA>>": TAM_DATA_LARGE,
+                "<<CONHORA>>": TAM_DATA_LARGE,
+                "<<CONCAT>>": TAM_DATA_LARGE,
+                "<<CONSUC>>": TAM_DATA_LARGE
             }
 
             for i, idx in enumerate(sel_idx):
@@ -293,66 +261,47 @@ if 'raw_records' in st.session_state:
                     raw_fecha = record.get('Fecha', '2025-01-01')
                     dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
                     nombre_mes = MESES_ES[max(0, min(11, dt.month - 1))]
-                except:
-                    dt = datetime.now()
-                    nombre_mes = "error"
+                except: dt = datetime.now(); nombre_mes = "error"
 
                 f_tipo = record.get('Tipo', 'Sin Tipo')
                 f_suc = record.get('Sucursal', '000')
-                
-                # --- LÓGICA CONCAT: RELLENAR PLACEHOLDER ---
-                # Estructura: Punto, Ruta, Municipio + dato, Sección + dato.
-                parts_concat = []
-                
-                # 1. Punto
-                val_punto = record.get('Punto de reunion')
-                if val_punto and str(val_punto).lower() != 'none':
-                    parts_concat.append(str(val_punto))
-                
-                # 2. Ruta
-                val_ruta = record.get('Ruta a seguir')
-                if val_ruta and str(val_ruta).lower() != 'none':
-                    parts_concat.append(str(val_ruta))
-                
-                # 3. Municipio
-                val_muni = record.get('Municipio')
-                if val_muni and str(val_muni).lower() != 'none':
-                    parts_concat.append(f"Municipio {val_muni}")
-                
-                # 4. Sección (Mayúsculas)
-                val_secc = record.get('Seccion')
-                if val_secc and str(val_secc).lower() != 'none':
-                    parts_concat.append(f"Sección {str(val_secc).upper()}")
-                
-                f_concat_texto = ", ".join(parts_concat)
+
+                # --- PREPARACIÓN DE DATOS (Concat, Confecha, Conhora, Consuc) ---
+                f_confecha = obtener_confecha(dt)
+                f_conhora  = obtener_conhora(record.get('Hora', ''))
+                f_tipo_procesado = textwrap.fill(f_tipo, width=35)
+
+                # Definir CONCAT y CONSUC según el tipo
+                f_concat = ""
+                f_consuc = ""
 
                 if f_tipo == "Actividad en Sucursal":
-                    f_concat = f"Sucursal {f_suc}"
+                    # Si es Sucursal, llenamos CONSUC y dejamos CONCAT vacío (o según convenga)
+                    f_consuc = f"Sucursal {f_suc}"
+                    # Para el nombre del archivo usamos el consuc
+                    f_concat_filename = f_consuc 
                 else:
-                    f_concat = f_concat_texto
+                    # Si NO es sucursal, llenamos CONCAT
+                    f_concat = obtener_concat(record)
+                    f_concat_filename = f_concat
 
-                nom_arch_base = (
-                    f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
-                    + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
-                )
+                nom_arch_base = f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc} - {f_concat_filename}"
                 nom_arch_base = re.sub(r'[\\/*?:"<>|]', "", nom_arch_base)
-
                 status_text.markdown(f"**Procesando:** `{nom_arch_base}`")
 
-                f_tipo_procesado = textwrap.fill(f_tipo, width=35)
-                f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
-
+                # DICCIONARIO EXACTO DE REEMPLAZOS
+                # Usa las claves que tienes en el PPTX
                 reemplazos = {
                     "<<Tipo>>": f_tipo_procesado,
                     "<<Sucursal>>": f_suc,
                     "<<Seccion>>": record.get('Seccion'),
-                    "<<Confechor>>": f_confechor_procesado,
-                    "<<Concat>>": f_concat
+                    "<<CONFECHA>>": f_confecha,
+                    "<<CONHORA>>": f_conhora,
+                    "<<CONCAT>>": f_concat,
+                    "<<CONSUC>>": f_consuc
                 }
 
-                prs = Presentation(
-                    os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo])
-                )
+                prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
 
                 if f_tipo == "Actividad en Sucursal":
                     adj_lista = record_orig.get("Lista de asistencia")
@@ -362,43 +311,30 @@ if 'raw_records' in st.session_state:
                             xml_slides.remove(xml_slides[3])
 
                 for s_idx, slide in enumerate(prs.slides):
-                    # IMÁGENES
+                    # IMÁGENES (Sin cambios)
                     for shape in list(slide.shapes):
                         if shape.has_text_frame:
-                            tags_foto = [
-                                "Foto de equipo", "Foto 01", "Foto 02", "Foto 03",
-                                "Foto 04", "Foto 05", "Foto 06", "Foto 07",
-                                "Reporte firmado", "Lista de asistencia"
-                            ]
+                            tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
                             for tf_tag in tags_foto:
                                 if f"<<{tf_tag}>>" in shape.text_frame.text:
                                     adj_data = record_orig.get(tf_tag)
                                     if adj_data:
                                         thumbs = adj_data[0].get('thumbnails', {})
-                                        url = (
-                                            thumbs.get('full', {}).get('url')
-                                            or thumbs.get('large', {}).get('url')
-                                            or adj_data[0].get('url')
-                                        )
+                                        url = thumbs.get('full', {}).get('url') or thumbs.get('large', {}).get('url') or adj_data[0].get('url')
                                         try:
                                             r_img = requests.get(url).content
-                                            img_io = procesar_imagen_inteligente(
-                                                r_img, shape.width, shape.height, con_blur=(s_idx < 2)
-                                            )
-                                            slide.shapes.add_picture(
-                                                img_io, shape.left, shape.top, shape.width, shape.height
-                                            )
-                                            sp = shape._element
-                                            sp.getparent().remove(sp)
+                                            img_io = procesar_imagen_inteligente(r_img, shape.width, shape.height, con_blur=(s_idx < 2))
+                                            slide.shapes.add_picture(img_io, shape.left, shape.top, shape.width, shape.height)
+                                            sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
 
-                    # TEXTO
+                    # TEXTO Y PLACEHOLDERS
                     for shape in slide.shapes:
                         if shape.has_text_frame:
                             for tag, val in reemplazos.items():
                                 if tag in shape.text_frame.text:
                                     
-                                    # Mover 2pt hacia arriba Tipo y Sucursal
+                                    # Mover 2pt arriba (Solo Tipo y Sucursal original)
                                     if tag in ["<<Tipo>>", "<<Sucursal>>"]:
                                         shape.top = shape.top - Pt(2)
                                     
@@ -406,36 +342,35 @@ if 'raw_records' in st.session_state:
                                     tf.word_wrap = True 
                                     
                                     bodyPr = tf._element.bodyPr
-                                    # Limpieza
+                                    # Limpiar ajustes previos
                                     for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                         existing = bodyPr.find(qn(f'a:{child}'))
-                                        if existing is not None:
-                                            bodyPr.remove(existing)
+                                        if existing is not None: bodyPr.remove(existing)
 
-                                    # CONFIGURACIÓN DE AUTOAJUSTE
-                                    # "Rellenar sin desbordar" = Texto Grande + normAutofit (Shrink text on overflow)
-                                    if tag == "<<Concat>>" or tag == "<<Confechor>>":
+                                    # CONFIGURACIÓN DE AJUSTE
+                                    # CONCAT, CONSUC, CONFECHA, CONHORA -> normAutofit (Reducir si excede)
+                                    if tag in ["<<CONCAT>>", "<<CONSUC>>", "<<CONFECHA>>", "<<CONHORA>>"]:
                                         bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                    
-                                    # Tipo: Mantener fuente fija (12), crecer caja
+                                    # TIPO -> spAutoFit (Crecer caja)
                                     elif tag == "<<Tipo>>":
                                         bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                     
                                     tf.clear()
                                     p = tf.paragraphs[0]
                                     
-                                    if tag == "<<Confechor>>": 
+                                    # Alineación
+                                    if tag in ["<<CONFECHA>>", "<<CONHORA>>"]:
                                         p.alignment = PP_ALIGN.CENTER
-                                        p.space_before = Pt(0)
-                                        p.space_after = Pt(0)
-                                        p.line_spacing = 1.0 
+                                    
+                                    # Reset espaciados
+                                    p.space_before = Pt(0)
+                                    p.space_after = Pt(0)
                                     
                                     run = p.add_run()
                                     run.text = str(val)
                                     run.font.bold = True
                                     run.font.color.rgb = AZUL_CELESTE
                                     
-                                    # Aplicar tamaño (12 para Tipo, Grande para los otros)
                                     final_size = mapa_tamanos.get(tag, 12)
                                     run.font.size = Pt(final_size)
 
@@ -452,7 +387,6 @@ if 'raw_records' in st.session_state:
                         bytes_finales = data_out
                         mime_type = "application/pdf"
                     else:
-                        # PNG Optimizado
                         images = convert_from_bytes(data_out, dpi=200, fmt='png') 
                         img_pil = images[0]
                         with BytesIO() as img_buf:
@@ -469,16 +403,12 @@ if 'raw_records' in st.session_state:
                         "Tipo": f_tipo,
                         "Mime": mime_type
                     })
-
                 p_bar.progress((i + 1) / len(sel_idx))
             
-            status_text.success("✅ Generación lista. Selecciona archivos abajo.")
+            status_text.success("✅ Generación lista.")
 
-        # --- GESTOR DE DESCARGAS ---
         if "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria) > 0:
             st.divider()
-            st.subheader("📋 Selecciona los archivos a descargar")
-            
             c_all, c_none, _ = st.columns([1, 1, 3])
             if c_all.button("☑️ Marcar Todos"):
                 for item in st.session_state.archivos_en_memoria: item["Seleccionar"] = True
@@ -488,38 +418,13 @@ if 'raw_records' in st.session_state:
                 st.rerun()
 
             df_display = pd.DataFrame(st.session_state.archivos_en_memoria)
-            edited_df = st.data_editor(
-                df_display[["Seleccionar", "Archivo", "Sucursal", "Tipo"]],
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Seleccionar": st.column_config.CheckboxColumn(required=True),
-                    "Archivo": st.column_config.TextColumn(width="large")
-                }
-            )
+            edited_df = st.data_editor(df_display[["Seleccionar", "Archivo", "Sucursal", "Tipo"]], hide_index=True, use_container_width=True, column_config={"Seleccionar": st.column_config.CheckboxColumn(required=True)})
             
-            selected_rows = edited_df[edited_df["Seleccionar"] == True]
-            indices_seleccionados = selected_rows.index.tolist()
-            
+            indices_seleccionados = edited_df[edited_df["Seleccionar"] == True].index.tolist()
             archivos_finales = [st.session_state.archivos_en_memoria[i] for i in indices_seleccionados]
-            cant = len(archivos_finales)
             
-            st.divider()
-            st.write(f"📥 **{cant} archivos seleccionados**")
-            
-            if cant > 0:
+            if len(archivos_finales) > 0:
                 zip_buffer = BytesIO()
                 with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
-                    for item in archivos_finales:
-                        zip_file.writestr(item["RutaZip"], item["Datos"])
-                
-                fecha_zip = datetime.now().strftime('%Y%m%d_%H%M%S')
-                
-                st.download_button(
-                    label=f"📦 DESCARGAR SELECCIONADOS (ZIP)",
-                    data=zip_buffer.getvalue(),
-                    file_name=f"Reportes_{fecha_zip}.zip",
-                    mime="application/zip",
-                    type="primary",
-                    use_container_width=True
-                )
+                    for item in archivos_finales: zip_file.writestr(item["RutaZip"], item["Datos"])
+                st.download_button(label=f"📦 DESCARGAR {len(archivos_finales)} ARCHIVOS (ZIP)", data=zip_buffer.getvalue(), file_name=f"Reportes_{datetime.now().strftime('%H%M%S')}.zip", mime="application/zip", type="primary", use_container_width=True)
