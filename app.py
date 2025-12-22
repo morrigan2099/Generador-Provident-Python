@@ -26,9 +26,9 @@ TAM_SUCURSAL_REPORTE = 12
 TAM_SUCURSAL_POSTAL  = 18 
 
 # TAMAÑOS DE RELLENO
-TAM_MEDIANO_FIJO = 15  # Para Conhora
+TAM_MEDIANO_FIJO = 18  # Para Conhora
 TAM_RELLENO_MAX  = 80  # Para Sucursal
-TAM_RELLENO_MID  = 24  # Para Concat, Confecha, etc.
+TAM_RELLENO_MID  = 30  # Para Concat, Confecha, etc.
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
