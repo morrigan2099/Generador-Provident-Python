@@ -18,15 +18,18 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-# Tamaños base para que intenten rellenar el placeholder.
-# El código aplicará 'normAutofit' (Shrink text on overflow) para que no se desborden.
+# 1. TAMAÑOS FIJOS
 TAM_TIPO_BASE = 12  
 TAM_SECCION   = 12
-TAM_SUCURSAL_REPORTE = 12
+
+# 2. TAMAÑOS INDEPENDIENTES PARA SUCURSAL (Número)
+TAM_SUCURSAL_REPORTE = 12 
 TAM_SUCURSAL_POSTAL  = 18 
 
-# Tamaños iniciales grandes para CONFECHA, CONHORA, CONCAT, CONSUC
-TAM_DATA_LARGE = 20  
+# 3. TAMAÑOS DE RELLENO (Start Large -> Shrink to Fit)
+# Estos campos inician grandes (20-24pt). 
+# La propiedad 'normAutofit' reducirá el tamaño automáticamente si el texto es muy largo.
+TAM_RELLENO_GRANDE = 24 
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -41,13 +44,8 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
     img_gray = img.convert("L")
     arr = np.array(img_gray)
     h, w = arr.shape
-
-    def fila_es_negra(fila):
-        return (np.sum(fila < 35) / fila.size) * 100 > umbral_negro
-
-    def columna_es_negra(col):
-        return (np.sum(col < 35) / col.size) * 100 > umbral_negro
-
+    def fila_es_negra(fila): return (np.sum(fila < 35) / fila.size) * 100 > umbral_negro
+    def columna_es_negra(col): return (np.sum(col < 35) / col.size) * 100 > umbral_negro
     top = 0
     while top < h and fila_es_negra(arr[top, :]): top += 1
     bottom = h - 1
@@ -56,13 +54,12 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
     while left < w and columna_es_negra(arr[:, left]): left += 1
     right = w - 1
     while right > left and columna_es_negra(arr[:, right]): right -= 1
-
     if right <= left or bottom <= top: return img
     return img.crop((left, top, right + 1, bottom + 1))
 
 # --- FUNCIONES DE LÓGICA DE NEGOCIO ---
 
-def obtener_confecha(fecha_dt):
+def obtener_fecha_texto(fecha_dt):
     # Formato: dddd dd 'de' mmmm 'de' aaaa
     # Ejemplo: lunes 22 de diciembre de 2025
     dia_idx = fecha_dt.weekday()
@@ -70,52 +67,42 @@ def obtener_confecha(fecha_dt):
     nombre_mes = MESES_ES[fecha_dt.month - 1]
     return f"{nombre_dia} {fecha_dt.day} de {nombre_mes} de {fecha_dt.year}"
 
-def obtener_conhora(hora_str):
-    # Formato 12h con sufijos verbales
-    if not hora_str or str(hora_str).lower() == "none":
-        return ""
-    
+def obtener_hora_texto(hora_str):
+    # Formato: 10:00 de la mañana
+    if not hora_str or str(hora_str).lower() == "none": return ""
     hh_mm = str(hora_str)[0:5] 
     try:
         parts = hh_mm.split(':')
         h_24 = int(parts[0])
         minutos = parts[1]
-        
         if 8 <= h_24 <= 11: sufijo = "de la mañana"
         elif h_24 == 12: sufijo = "del día"
         elif 13 <= h_24 <= 19: sufijo = "de la tarde"
         else: sufijo = "p.m." if h_24 >= 12 else "a.m."
-
         h_mostrar = h_24
         if h_24 > 12: h_mostrar = h_24 - 12
         elif h_24 == 0: h_mostrar = 12
-        
-        # Eliminar ceros a la izquierda en la hora (09 -> 9)
         return f"{int(h_mostrar)}:{minutos} {sufijo}"
-    except:
-        return hh_mm
+    except: return hh_mm
 
-def obtener_concat(record):
-    # Concatenar: Punto, Ruta, "Municipio" + dato, "Sección" + dato (Mayus)
-    parts_concat = []
+def obtener_concat_texto(record):
+    # Lógica Concat: Punto, Ruta, Municipio, Sección
+    # Solo concatena si hay datos.
+    parts = []
     
     val_punto = record.get('Punto de reunion')
-    if val_punto and str(val_punto).lower() != 'none':
-        parts_concat.append(str(val_punto))
+    if val_punto and str(val_punto).lower() != 'none': parts.append(str(val_punto))
     
     val_ruta = record.get('Ruta a seguir')
-    if val_ruta and str(val_ruta).lower() != 'none':
-        parts_concat.append(str(val_ruta))
+    if val_ruta and str(val_ruta).lower() != 'none': parts.append(str(val_ruta))
     
     val_muni = record.get('Municipio')
-    if val_muni and str(val_muni).lower() != 'none':
-        parts_concat.append(f"Municipio {val_muni}")
+    if val_muni and str(val_muni).lower() != 'none': parts.append(f"Municipio {val_muni}")
     
     val_secc = record.get('Seccion')
-    if val_secc and str(val_secc).lower() != 'none':
-        parts_concat.append(f"Sección {str(val_secc).upper()}")
+    if val_secc and str(val_secc).lower() != 'none': parts.append(f"Sección {str(val_secc).upper()}")
     
-    return ", ".join(parts_concat)
+    return ", ".join(parts)
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
     base_w, base_h = int(target_w_pt / 9525), int(target_h_pt / 9525)
@@ -174,14 +161,14 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v77", layout="wide")
+st.set_page_config(page_title="Provident Pro v79", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v77 - Final")
+st.title("🚀 Generador Pro v79 - Final")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -239,18 +226,20 @@ if 'raw_records' in st.session_state:
             st.session_state.archivos_en_memoria = []
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
-            # Ajuste de tamaño Sucursal según modo
+            # Ajuste de tamaño Sucursal según modo (Reporte o Postal)
             tam_sucursal_actual = TAM_SUCURSAL_POSTAL if modo == "Postales" else TAM_SUCURSAL_REPORTE
 
-            # Mapa de Tamaños (Base)
+            # Mapa de tamaños de fuente
             mapa_tamanos = {
                 "<<Tipo>>": TAM_TIPO_BASE,
                 "<<Sucursal>>": tam_sucursal_actual,
                 "<<Seccion>>": TAM_SECCION,
-                "<<CONFECHA>>": TAM_DATA_LARGE,
-                "<<CONHORA>>": TAM_DATA_LARGE,
-                "<<CONCAT>>": TAM_DATA_LARGE,
-                "<<CONSUC>>": TAM_DATA_LARGE
+                # Campos de Relleno (Usan autofit)
+                "<<Confecha>>": TAM_RELLENO_GRANDE,
+                "<<Conhora>>": TAM_RELLENO_GRANDE,
+                "<<Consuc>>": TAM_RELLENO_GRANDE,
+                "<<Concat>>": TAM_RELLENO_GRANDE,
+                "<<Confechor>>": TAM_RELLENO_GRANDE
             }
 
             for i, idx in enumerate(sel_idx):
@@ -266,39 +255,49 @@ if 'raw_records' in st.session_state:
                 f_tipo = record.get('Tipo', 'Sin Tipo')
                 f_suc = record.get('Sucursal', '000')
 
-                # --- PREPARACIÓN DE DATOS (Concat, Confecha, Conhora, Consuc) ---
-                f_confecha = obtener_confecha(dt)
-                f_conhora  = obtener_conhora(record.get('Hora', ''))
+                # --- 1. DATOS DE TEXTO ---
+                txt_fecha = obtener_fecha_texto(dt)
+                txt_hora  = obtener_hora_texto(record.get('Hora', ''))
+                
+                # --- 2. PREPARACIÓN DE PLACEHOLDERS ---
+                
+                # VARIABLES REPORTES:
+                f_confecha = txt_fecha
+                f_conhora  = txt_hora
+                
+                # VARIABLES POSTALES:
+                # Confechor: Fecha + Salto + Hora
+                f_confechor = f"{txt_fecha.strip()}\n{txt_hora.strip()}"
+                
+                # CONCAT vs CONSUC:
+                # Calculamos f_concat (ubicación) y f_consuc ("Sucursal X") independientemente.
+                f_concat_texto = obtener_concat_texto(record)
+                f_consuc_texto = f"Sucursal {f_suc}"
+
+                # Para el nombre del archivo usamos una lógica para que se entienda
+                if f_tipo == "Actividad en Sucursal":
+                    f_filename_tag = f_consuc_texto
+                else:
+                    f_filename_tag = f_concat_texto
+
                 f_tipo_procesado = textwrap.fill(f_tipo, width=35)
 
-                # Definir CONCAT y CONSUC según el tipo
-                f_concat = ""
-                f_consuc = ""
-
-                if f_tipo == "Actividad en Sucursal":
-                    # Si es Sucursal, llenamos CONSUC y dejamos CONCAT vacío (o según convenga)
-                    f_consuc = f"Sucursal {f_suc}"
-                    # Para el nombre del archivo usamos el consuc
-                    f_concat_filename = f_consuc 
-                else:
-                    # Si NO es sucursal, llenamos CONCAT
-                    f_concat = obtener_concat(record)
-                    f_concat_filename = f_concat
-
-                nom_arch_base = f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc} - {f_concat_filename}"
+                # Nombre archivo limpio
+                nom_arch_base = f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc} - {f_filename_tag}"
                 nom_arch_base = re.sub(r'[\\/*?:"<>|]', "", nom_arch_base)
                 status_text.markdown(f"**Procesando:** `{nom_arch_base}`")
 
-                # DICCIONARIO EXACTO DE REEMPLAZOS
-                # Usa las claves que tienes en el PPTX
+                # DICCIONARIO MAESTRO
+                # Se envían TODOS los datos. El PPT solo usará los placeholders que tenga.
                 reemplazos = {
                     "<<Tipo>>": f_tipo_procesado,
                     "<<Sucursal>>": f_suc,
                     "<<Seccion>>": record.get('Seccion'),
-                    "<<CONFECHA>>": f_confecha,
-                    "<<CONHORA>>": f_conhora,
-                    "<<CONCAT>>": f_concat,
-                    "<<CONSUC>>": f_consuc
+                    "<<Confecha>>": f_confecha,
+                    "<<Conhora>>": f_conhora,
+                    "<<Consuc>>": f_consuc_texto,
+                    "<<Concat>>": f_concat_texto,
+                    "<<Confechor>>": f_confechor
                 }
 
                 prs = Presentation(os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo]))
@@ -311,7 +310,7 @@ if 'raw_records' in st.session_state:
                             xml_slides.remove(xml_slides[3])
 
                 for s_idx, slide in enumerate(prs.slides):
-                    # IMÁGENES (Sin cambios)
+                    # IMÁGENES
                     for shape in list(slide.shapes):
                         if shape.has_text_frame:
                             tags_foto = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]
@@ -328,13 +327,13 @@ if 'raw_records' in st.session_state:
                                             sp = shape._element; sp.getparent().remove(sp)
                                         except: pass
 
-                    # TEXTO Y PLACEHOLDERS
+                    # TEXTO
                     for shape in slide.shapes:
                         if shape.has_text_frame:
                             for tag, val in reemplazos.items():
                                 if tag in shape.text_frame.text:
                                     
-                                    # Mover 2pt arriba (Solo Tipo y Sucursal original)
+                                    # LÓGICA DE MOVIMIENTO (Solo Tipo y Sucursal)
                                     if tag in ["<<Tipo>>", "<<Sucursal>>"]:
                                         shape.top = shape.top - Pt(2)
                                     
@@ -342,29 +341,29 @@ if 'raw_records' in st.session_state:
                                     tf.word_wrap = True 
                                     
                                     bodyPr = tf._element.bodyPr
-                                    # Limpiar ajustes previos
+                                    # Limpiar configuraciones previas
                                     for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                         existing = bodyPr.find(qn(f'a:{child}'))
                                         if existing is not None: bodyPr.remove(existing)
 
-                                    # CONFIGURACIÓN DE AJUSTE
-                                    # CONCAT, CONSUC, CONFECHA, CONHORA -> normAutofit (Reducir si excede)
-                                    if tag in ["<<CONCAT>>", "<<CONSUC>>", "<<CONFECHA>>", "<<CONHORA>>"]:
+                                    # LÓGICA DE AUTOAJUSTE (XML)
+                                    # Campos de Relleno -> normAutofit (Reducir si excede)
+                                    if tag in ["<<Concat>>", "<<Consuc>>", "<<Confechor>>", "<<Confecha>>", "<<Conhora>>"]:
                                         bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                    # TIPO -> spAutoFit (Crecer caja)
+                                    # Tipo -> spAutoFit (Ajustar caja al texto)
                                     elif tag == "<<Tipo>>":
                                         bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                     
                                     tf.clear()
                                     p = tf.paragraphs[0]
                                     
-                                    # Alineación
-                                    if tag in ["<<CONFECHA>>", "<<CONHORA>>"]:
+                                    # Alineación y Espaciados
+                                    if tag in ["<<Confecha>>", "<<Conhora>>", "<<Confechor>>", "<<Consuc>>"]:
                                         p.alignment = PP_ALIGN.CENTER
                                     
-                                    # Reset espaciados
                                     p.space_before = Pt(0)
                                     p.space_after = Pt(0)
+                                    p.line_spacing = 1.0 
                                     
                                     run = p.add_run()
                                     run.text = str(val)
