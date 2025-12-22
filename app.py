@@ -18,10 +18,10 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-TAM_TIPO_BASE = 12   # Se mantendrá FIJO en 12.
+TAM_TIPO_BASE = 11   # Se mantendrá FIJO en 12.
 TAM_SUCURSAL  = 12
 TAM_SECCION   = 11
-TAM_CONFECHOR = 12 
+TAM_CONFECHOR = 11 
 TAM_CONCAT    = 11   # Tamaño máximo, se reducirá si el texto es muy largo.
 
 # --- CONSTANTES ---
