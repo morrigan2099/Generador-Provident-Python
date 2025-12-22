@@ -10,7 +10,7 @@ from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-from pptx.oxml.ns import qn  # 🔴 IMPORTANTE: Para manipular el XML de autoajuste
+from pptx.oxml.ns import qn
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
@@ -18,11 +18,11 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-TAM_TIPO_BASE = 11   # Se mantendrá FIJO en 12.
+TAM_TIPO_BASE = 12
 TAM_SUCURSAL  = 12
 TAM_SECCION   = 11
-TAM_CONFECHOR = 11 
-TAM_CONCAT    = 11   # Tamaño máximo, se reducirá si el texto es muy largo.
+TAM_CONFECHOR = 12 
+TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -63,7 +63,9 @@ def procesar_confechor_logica(fecha_dt, hora_str):
     dia = fecha_dt.day
     anio = fecha_dt.year
     
-    linea_fecha = f"{dia} de {nombre_mes} de {anio}"
+    # 🔴 CAMBIO SOLICITADO: Formato "mmmm dd 'de' aaaa"
+    # Ejemplo: "diciembre 22 de 2025"
+    linea_fecha = f"{nombre_mes} {dia} de {anio}"
     
     hora_final = ""
     if hora_str and str(hora_str).lower() != "none":
@@ -292,11 +294,10 @@ if 'raw_records' in st.session_state:
                         if x and str(x).lower() != 'none'
                     ])
                     
-                    # 🔴 CORRECCIÓN 1: NO RECORTAR CONCAT
                     if f_tipo == "Actividad en Sucursal":
                         f_concat = f"Sucursal {f_suc}"
                     else:
-                        f_concat = texto_lugares # Se pasa TODO el texto sin cortes
+                        f_concat = texto_lugares
 
                     nom_arch = (
                         f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
@@ -305,9 +306,8 @@ if 'raw_records' in st.session_state:
 
                     status_text.markdown(f"**Procesando:** `{nom_arch}`")
 
-                    # Procesamos Tipo para facilitar saltos de línea (opcional, pero ayuda al ajuste)
+                    # Ajuste de ancho para facilitar saltos de línea en Tipo
                     f_tipo_procesado = textwrap.fill(f_tipo, width=35)
-                    
                     f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
 
                     reemplazos = {
@@ -368,38 +368,32 @@ if 'raw_records' in st.session_state:
                                             except:
                                                 pass
 
-                        # TEXTO - AQUÍ ESTÁ LA LÓGICA DE AJUSTE XML
+                        # TEXTO
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
-                                        tf = shape.text_frame
                                         
-                                        # Habilitar ajuste multilínea básico
+                                        # 🔴 CAMBIO SOLICITADO: Mover 2pts hacia arriba TIPO y SUCURSAL
+                                        if tag in ["<<Tipo>>", "<<Sucursal>>"]:
+                                            shape.top = shape.top - Pt(2)
+                                        
+                                        tf = shape.text_frame
                                         tf.word_wrap = True 
                                         
-                                        # Accedemos al XML de propiedades del cuerpo de texto
+                                        # Ajustes XML para tamaños
                                         bodyPr = tf._element.bodyPr
-
-                                        # --- PASO 1: LIMPIEZA ---
-                                        # Eliminamos cualquier configuración previa (para no tener conflictos)
                                         for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                             existing = bodyPr.find(qn(f'a:{child}'))
                                             if existing is not None:
                                                 bodyPr.remove(existing)
 
-                                        # --- PASO 2: LÓGICA ESPECÍFICA ---
                                         if tag == "<<Concat>>":
-                                            # SI ES CONCAT: "Shrink text on overflow" (Reducir letra para que quepa)
                                             bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                        
                                         elif tag == "<<Tipo>>":
-                                            # SI ES TIPO: "Resize shape to fit text" (Mantener tamaño fuente, crecer caja)
                                             bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                         
-                                        # Si no es ninguno, se deja el comportamiento por defecto o se podría forzar 'noAutofit'
-
-                                        # --- PASO 3: INSERTAR TEXTO ---
+                                        # Insertar contenido
                                         tf.clear()
                                         p = tf.paragraphs[0]
                                         
@@ -411,7 +405,6 @@ if 'raw_records' in st.session_state:
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
                                         
-                                        # Asegurar tamaño exacto
                                         final_size = mapa_tamanos.get(tag, 12)
                                         run.font.size = Pt(final_size)
 
