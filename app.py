@@ -19,9 +19,9 @@ from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
 TAM_TIPO_BASE = 12
-TAM_SUCURSAL  = 13
+TAM_SUCURSAL  = 12
 TAM_SECCION   = 11
-TAM_CONFECHOR = 10.5 
+TAM_CONFECHOR = 12 
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
@@ -63,8 +63,7 @@ def procesar_confechor_logica(fecha_dt, hora_str):
     dia = fecha_dt.day
     anio = fecha_dt.year
     
-    # 🔴 CAMBIO SOLICITADO: Formato "mmmm dd 'de' aaaa"
-    # Ejemplo: "diciembre 22 de 2025"
+    # Construcción limpia de la fecha
     linea_fecha = f"{nombre_mes} {dia} de {anio}"
     
     hora_final = ""
@@ -88,8 +87,11 @@ def procesar_confechor_logica(fecha_dt, hora_str):
             hora_final = f"{h_str}:{minutos} {sufijo}"
         except:
             hora_final = hh_mm
-            
-    return f"{linea_fecha}\n{hora_final}"
+    
+    # 🔴 CORRECCIÓN ESTRICTA DE ESPACIOS
+    # Usamos .strip() para asegurar que no hay espacios al final de la fecha
+    # ni al principio de la hora. Solo queda el \n en medio.
+    return f"{linea_fecha.strip()}\n{hora_final.strip()}"
 
 # --- FUNCIONES DE IMAGEN Y TEXTO ---
 
@@ -161,7 +163,7 @@ def generar_pdf(pptx_bytes):
         return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v69", layout="wide")
+st.set_page_config(page_title="Provident Pro v71", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
@@ -170,7 +172,7 @@ if 'config' not in st.session_state:
     else:
         st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v69 - Final")
+st.title("🚀 Generador Pro v71 - Final")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -262,7 +264,7 @@ if 'raw_records' in st.session_state:
             p_bar = st.progress(0)
             status_text = st.empty()
             
-            # 1. Limpiamos la memoria anterior
+            # Limpiamos memoria anterior
             st.session_state.archivos_en_memoria = []
             
             AZUL_CELESTE = RGBColor(0, 176, 240)
@@ -301,7 +303,7 @@ if 'raw_records' in st.session_state:
                 else:
                     f_concat = texto_lugares
 
-                # Nombre base del archivo (sin extensión aún)
+                # Nombre base del archivo
                 nom_arch_base = (
                     f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
                     + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
@@ -369,12 +371,14 @@ if 'raw_records' in st.session_state:
                             for tag, val in reemplazos.items():
                                 if tag in shape.text_frame.text:
                                     
+                                    # Mover Tipo y Sucursal 2pt arriba
                                     if tag in ["<<Tipo>>", "<<Sucursal>>"]:
                                         shape.top = shape.top - Pt(2)
                                     
                                     tf = shape.text_frame
                                     tf.word_wrap = True 
                                     
+                                    # XML Autoajuste
                                     bodyPr = tf._element.bodyPr
                                     for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                         existing = bodyPr.find(qn(f'a:{child}'))
@@ -388,7 +392,13 @@ if 'raw_records' in st.session_state:
                                     
                                     tf.clear()
                                     p = tf.paragraphs[0]
-                                    if tag == "<<Confechor>>": p.alignment = PP_ALIGN.CENTER
+                                    
+                                    if tag == "<<Confechor>>": 
+                                        p.alignment = PP_ALIGN.CENTER
+                                        # Espaciado de párrafo 0 absoluto
+                                        p.space_before = Pt(0)
+                                        p.space_after = Pt(0)
+                                        p.line_spacing = 1.0 
                                     
                                     run = p.add_run()
                                     run.text = str(val)
@@ -406,12 +416,11 @@ if 'raw_records' in st.session_state:
                     bytes_finales = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
                     nombre_archivo = f"{nom_arch_base[:120]}{ext}"
                     
-                    # Ruta Interna del ZIP (ESTRUCTURA DE ARBOL)
-                    # Quitamos "Provident/" del inicio para evitar la carpeta duplicada al descomprimir
+                    # Ruta Interna del ZIP (Árbol limpio)
                     ruta_zip = f"{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nombre_archivo}"
 
                     st.session_state.archivos_en_memoria.append({
-                        "Seleccionar": True, # Checkbox activado por defecto
+                        "Seleccionar": True,
                         "Archivo": nombre_archivo,
                         "RutaZip": ruta_zip,
                         "Datos": bytes_finales,
@@ -421,14 +430,13 @@ if 'raw_records' in st.session_state:
 
                 p_bar.progress((i + 1) / len(sel_idx))
             
-            status_text.success("✅ Archivos procesados. Selecciona abajo cuáles quieres descargar.")
+            status_text.success("✅ Generación lista. Selecciona archivos abajo.")
 
         # --- GESTOR DE DESCARGA CON CHECKBOXES ---
         if "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria) > 0:
             st.divider()
             st.subheader("📋 Selecciona los archivos a descargar")
             
-            # Controles Masivos
             c_all, c_none, _ = st.columns([1, 1, 3])
             if c_all.button("☑️ Marcar Todos"):
                 for item in st.session_state.archivos_en_memoria: item["Seleccionar"] = True
@@ -437,9 +445,7 @@ if 'raw_records' in st.session_state:
                 for item in st.session_state.archivos_en_memoria: item["Seleccionar"] = False
                 st.rerun()
 
-            # Tabla Interactiva (Data Editor)
             df_display = pd.DataFrame(st.session_state.archivos_en_memoria)
-            # Mostramos solo columnas visuales
             edited_df = st.data_editor(
                 df_display[["Seleccionar", "Archivo", "Sucursal", "Tipo"]],
                 hide_index=True,
@@ -450,7 +456,6 @@ if 'raw_records' in st.session_state:
                 }
             )
             
-            # Recuperar índices seleccionados
             selected_rows = edited_df[edited_df["Seleccionar"] == True]
             indices_seleccionados = selected_rows.index.tolist()
             
@@ -461,21 +466,18 @@ if 'raw_records' in st.session_state:
             st.write(f"📥 **{cant} archivos seleccionados**")
             
             if cant > 0:
-                # Creación del ZIP al vuelo solo con lo seleccionado
                 zip_buffer = BytesIO()
                 with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
                     for item in archivos_finales:
-                        # Usamos 'RutaZip' que contiene el árbol (Año/Mes/etc)
                         zip_file.writestr(item["RutaZip"], item["Datos"])
                 
                 fecha_zip = datetime.now().strftime('%Y%m%d_%H%M%S')
                 
                 st.download_button(
-                    label=f"📦 DESCARGAR SELECCIONADOS (Mantiene Carpetas)",
+                    label=f"📦 DESCARGAR SELECCIONADOS (ZIP)",
                     data=zip_buffer.getvalue(),
                     file_name=f"Reportes_{fecha_zip}.zip",
                     mime="application/zip",
                     type="primary",
                     use_container_width=True
                 )
-                st.caption("ℹ️ Este ZIP contiene el árbol de carpetas exacto. Al descomprimirlo, los archivos se acomodarán en sus carpetas correspondientes.")
