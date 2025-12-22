@@ -257,11 +257,14 @@ if 'raw_records' in st.session_state:
                 key=f"p_{t}"
             )
 
+        # --- SECCIÓN DE GENERACIÓN Y LISTA DE SELECCIÓN ---
         if st.button("🔥 GENERAR", use_container_width=True, type="primary"):
             p_bar = st.progress(0)
             status_text = st.empty()
-            zip_buf = BytesIO()
-
+            
+            # 1. Limpiamos la memoria anterior
+            st.session_state.archivos_en_memoria = []
+            
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
             mapa_tamanos = {
@@ -272,165 +275,207 @@ if 'raw_records' in st.session_state:
                 "<<Concat>>": TAM_CONCAT
             }
 
-            with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zip_f:
-                for i, idx in enumerate(sel_idx):
-                    record = st.session_state.raw_records[idx]['fields']
-                    record_orig = st.session_state.raw_data_original[idx]['fields']
+            for i, idx in enumerate(sel_idx):
+                record = st.session_state.raw_records[idx]['fields']
+                record_orig = st.session_state.raw_data_original[idx]['fields']
 
-                    try:
-                        raw_fecha = record.get('Fecha', '2025-01-01')
-                        dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
-                        nombre_mes = MESES_ES[max(0, min(11, dt.month - 1))]
-                    except:
-                        dt = datetime.now()
-                        nombre_mes = "error"
+                try:
+                    raw_fecha = record.get('Fecha', '2025-01-01')
+                    dt = datetime.strptime(raw_fecha, '%Y-%m-%d')
+                    nombre_mes = MESES_ES[max(0, min(11, dt.month - 1))]
+                except:
+                    dt = datetime.now()
+                    nombre_mes = "error"
 
-                    f_tipo = record.get('Tipo', 'Sin Tipo')
-                    f_suc = record.get('Sucursal', '000')
-                    lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
+                f_tipo = record.get('Tipo', 'Sin Tipo')
+                f_suc = record.get('Sucursal', '000')
+                lugar = record.get('Punto de reunion') or record.get('Ruta a seguir')
 
-                    texto_lugares = ", ".join([
-                        str(x) for x in [lugar, record.get('Municipio')]
-                        if x and str(x).lower() != 'none'
-                    ])
-                    
-                    if f_tipo == "Actividad en Sucursal":
-                        f_concat = f"Sucursal {f_suc}"
-                    else:
-                        f_concat = texto_lugares
+                texto_lugares = ", ".join([
+                    str(x) for x in [lugar, record.get('Municipio')]
+                    if x and str(x).lower() != 'none'
+                ])
+                
+                if f_tipo == "Actividad en Sucursal":
+                    f_concat = f"Sucursal {f_suc}"
+                else:
+                    f_concat = texto_lugares
 
-                    nom_arch = (
-                        f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
-                        + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
-                    )
+                # Nombre base del archivo (sin extensión aún)
+                nom_arch_base = (
+                    f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
+                    + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
+                )
+                nom_arch_base = re.sub(r'[\\/*?:"<>|]', "", nom_arch_base)
 
-                    status_text.markdown(f"**Procesando:** `{nom_arch}`")
+                status_text.markdown(f"**Procesando:** `{nom_arch_base}`")
 
-                    # Ajuste de ancho para facilitar saltos de línea en Tipo
-                    f_tipo_procesado = textwrap.fill(f_tipo, width=35)
-                    f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
+                f_tipo_procesado = textwrap.fill(f_tipo, width=35)
+                f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
 
-                    reemplazos = {
-                        "<<Tipo>>": f_tipo_procesado,
-                        "<<Sucursal>>": f_suc,
-                        "<<Seccion>>": record.get('Seccion'),
-                        "<<Confechor>>": f_confechor_procesado,
-                        "<<Concat>>": f_concat
-                    }
+                reemplazos = {
+                    "<<Tipo>>": f_tipo_procesado,
+                    "<<Sucursal>>": f_suc,
+                    "<<Seccion>>": record.get('Seccion'),
+                    "<<Confechor>>": f_confechor_procesado,
+                    "<<Concat>>": f_concat
+                }
 
-                    prs = Presentation(
-                        os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo])
-                    )
+                prs = Presentation(
+                    os.path.join(folder_fisica, st.session_state.config["plantillas"][f_tipo])
+                )
 
-                    if f_tipo == "Actividad en Sucursal":
-                        adj_lista = record_orig.get("Lista de asistencia")
-                        if not adj_lista or len(adj_lista) == 0:
-                            if len(prs.slides) >= 4:
-                                xml_slides = prs.slides._sldIdLst
-                                xml_slides.remove(xml_slides[3])
+                if f_tipo == "Actividad en Sucursal":
+                    adj_lista = record_orig.get("Lista de asistencia")
+                    if not adj_lista or len(adj_lista) == 0:
+                        if len(prs.slides) >= 4:
+                            xml_slides = prs.slides._sldIdLst
+                            xml_slides.remove(xml_slides[3])
 
-                    for s_idx, slide in enumerate(prs.slides):
-                        # IMÁGENES
-                        for shape in list(slide.shapes):
-                            if shape.has_text_frame:
-                                tags_foto = [
-                                    "Foto de equipo", "Foto 01", "Foto 02", "Foto 03",
-                                    "Foto 04", "Foto 05", "Foto 06", "Foto 07",
-                                    "Reporte firmado", "Lista de asistencia"
-                                ]
-                                for tf_tag in tags_foto:
-                                    if f"<<{tf_tag}>>" in shape.text_frame.text:
-                                        adj_data = record_orig.get(tf_tag)
-                                        if adj_data:
-                                            thumbs = adj_data[0].get('thumbnails', {})
-                                            url = (
-                                                thumbs.get('full', {}).get('url')
-                                                or thumbs.get('large', {}).get('url')
-                                                or adj_data[0].get('url')
+                for s_idx, slide in enumerate(prs.slides):
+                    # IMÁGENES
+                    for shape in list(slide.shapes):
+                        if shape.has_text_frame:
+                            tags_foto = [
+                                "Foto de equipo", "Foto 01", "Foto 02", "Foto 03",
+                                "Foto 04", "Foto 05", "Foto 06", "Foto 07",
+                                "Reporte firmado", "Lista de asistencia"
+                            ]
+                            for tf_tag in tags_foto:
+                                if f"<<{tf_tag}>>" in shape.text_frame.text:
+                                    adj_data = record_orig.get(tf_tag)
+                                    if adj_data:
+                                        thumbs = adj_data[0].get('thumbnails', {})
+                                        url = (
+                                            thumbs.get('full', {}).get('url')
+                                            or thumbs.get('large', {}).get('url')
+                                            or adj_data[0].get('url')
+                                        )
+                                        try:
+                                            r_img = requests.get(url).content
+                                            img_io = procesar_imagen_inteligente(
+                                                r_img, shape.width, shape.height, con_blur=(s_idx < 2)
                                             )
-                                            try:
-                                                r_img = requests.get(url).content
-                                                img_io = procesar_imagen_inteligente(
-                                                    r_img,
-                                                    shape.width,
-                                                    shape.height,
-                                                    con_blur=(s_idx < 2)
-                                                )
-                                                slide.shapes.add_picture(
-                                                    img_io,
-                                                    shape.left,
-                                                    shape.top,
-                                                    shape.width,
-                                                    shape.height
-                                                )
-                                                sp = shape._element
-                                                sp.getparent().remove(sp)
-                                            except:
-                                                pass
+                                            slide.shapes.add_picture(
+                                                img_io, shape.left, shape.top, shape.width, shape.height
+                                            )
+                                            sp = shape._element
+                                            sp.getparent().remove(sp)
+                                        except: pass
 
-                        # TEXTO
-                        for shape in slide.shapes:
-                            if shape.has_text_frame:
-                                for tag, val in reemplazos.items():
-                                    if tag in shape.text_frame.text:
-                                        
-                                        # 🔴 CAMBIO SOLICITADO: Mover 2pts hacia arriba TIPO y SUCURSAL
-                                        if tag in ["<<Tipo>>", "<<Sucursal>>"]:
-                                            shape.top = shape.top - Pt(2)
-                                        
-                                        tf = shape.text_frame
-                                        tf.word_wrap = True 
-                                        
-                                        # Ajustes XML para tamaños
-                                        bodyPr = tf._element.bodyPr
-                                        for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
-                                            existing = bodyPr.find(qn(f'a:{child}'))
-                                            if existing is not None:
-                                                bodyPr.remove(existing)
+                    # TEXTO
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            for tag, val in reemplazos.items():
+                                if tag in shape.text_frame.text:
+                                    
+                                    if tag in ["<<Tipo>>", "<<Sucursal>>"]:
+                                        shape.top = shape.top - Pt(2)
+                                    
+                                    tf = shape.text_frame
+                                    tf.word_wrap = True 
+                                    
+                                    bodyPr = tf._element.bodyPr
+                                    for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
+                                        existing = bodyPr.find(qn(f'a:{child}'))
+                                        if existing is not None:
+                                            bodyPr.remove(existing)
 
-                                        if tag == "<<Concat>>":
-                                            bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                        elif tag == "<<Tipo>>":
-                                            bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
-                                        
-                                        # Insertar contenido
-                                        tf.clear()
-                                        p = tf.paragraphs[0]
-                                        
-                                        if tag == "<<Confechor>>":
-                                            p.alignment = PP_ALIGN.CENTER
-                                        
-                                        run = p.add_run()
-                                        run.text = str(val)
-                                        run.font.bold = True
-                                        run.font.color.rgb = AZUL_CELESTE
-                                        
-                                        final_size = mapa_tamanos.get(tag, 12)
-                                        run.font.size = Pt(final_size)
+                                    if tag == "<<Concat>>":
+                                        bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
+                                    elif tag == "<<Tipo>>":
+                                        bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
+                                    
+                                    tf.clear()
+                                    p = tf.paragraphs[0]
+                                    if tag == "<<Confechor>>": p.alignment = PP_ALIGN.CENTER
+                                    
+                                    run = p.add_run()
+                                    run.text = str(val)
+                                    run.font.bold = True
+                                    run.font.color.rgb = AZUL_CELESTE
+                                    final_size = mapa_tamanos.get(tag, 12)
+                                    run.font.size = Pt(final_size)
 
-                    pp_io = BytesIO()
-                    prs.save(pp_io)
+                pp_io = BytesIO()
+                prs.save(pp_io)
+                data_out = generar_pdf(pp_io.getvalue())
+                
+                if data_out:
+                    ext = ".pdf" if modo == "Reportes" else ".jpg"
+                    bytes_finales = data_out if modo == "Reportes" else convert_from_bytes(data_out)[0].tobytes()
+                    nombre_archivo = f"{nom_arch_base[:120]}{ext}"
+                    
+                    # Ruta Interna del ZIP (ESTRUCTURA DE ARBOL)
+                    # Quitamos "Provident/" del inicio para evitar la carpeta duplicada al descomprimir
+                    ruta_zip = f"{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nombre_archivo}"
 
-                    data_out = generar_pdf(pp_io.getvalue())
-                    if data_out:
-                        ext = ".pdf" if modo == "Reportes" else ".jpg"
-                        
-                        ruta_zip = (
-                            f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/"
-                            f"{modo}/{f_suc}/{nom_arch[:120]}{ext}"
-                        )
-                        zip_f.writestr(
-                            ruta_zip,
-                            data_out if modo == "Reportes"
-                            else convert_from_bytes(data_out)[0].tobytes()
-                        )
+                    st.session_state.archivos_en_memoria.append({
+                        "Seleccionar": True, # Checkbox activado por defecto
+                        "Archivo": nombre_archivo,
+                        "RutaZip": ruta_zip,
+                        "Datos": bytes_finales,
+                        "Sucursal": f_suc,
+                        "Tipo": f_tipo
+                    })
 
-                    p_bar.progress((i + 1) / len(sel_idx))
+                p_bar.progress((i + 1) / len(sel_idx))
+            
+            status_text.success("✅ Archivos procesados. Selecciona abajo cuáles quieres descargar.")
 
-            status_text.success("✅ Completado.")
-            st.download_button(
-                "📥 DESCARGAR",
-                zip_buf.getvalue(),
-                f"Provident_{datetime.now().strftime('%H%M%S')}.zip",
-                use_container_width=True
+        # --- GESTOR DE DESCARGA CON CHECKBOXES ---
+        if "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria) > 0:
+            st.divider()
+            st.subheader("📋 Selecciona los archivos a descargar")
+            
+            # Controles Masivos
+            c_all, c_none, _ = st.columns([1, 1, 3])
+            if c_all.button("☑️ Marcar Todos"):
+                for item in st.session_state.archivos_en_memoria: item["Seleccionar"] = True
+                st.rerun()
+            if c_none.button("⬜ Desmarcar Todos"):
+                for item in st.session_state.archivos_en_memoria: item["Seleccionar"] = False
+                st.rerun()
+
+            # Tabla Interactiva (Data Editor)
+            df_display = pd.DataFrame(st.session_state.archivos_en_memoria)
+            # Mostramos solo columnas visuales
+            edited_df = st.data_editor(
+                df_display[["Seleccionar", "Archivo", "Sucursal", "Tipo"]],
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Seleccionar": st.column_config.CheckboxColumn(required=True),
+                    "Archivo": st.column_config.TextColumn(width="large")
+                }
             )
+            
+            # Recuperar índices seleccionados
+            selected_rows = edited_df[edited_df["Seleccionar"] == True]
+            indices_seleccionados = selected_rows.index.tolist()
+            
+            archivos_finales = [st.session_state.archivos_en_memoria[i] for i in indices_seleccionados]
+            cant = len(archivos_finales)
+            
+            st.divider()
+            st.write(f"📥 **{cant} archivos seleccionados**")
+            
+            if cant > 0:
+                # Creación del ZIP al vuelo solo con lo seleccionado
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED) as zip_file:
+                    for item in archivos_finales:
+                        # Usamos 'RutaZip' que contiene el árbol (Año/Mes/etc)
+                        zip_file.writestr(item["RutaZip"], item["Datos"])
+                
+                fecha_zip = datetime.now().strftime('%Y%m%d_%H%M%S')
+                
+                st.download_button(
+                    label=f"📦 DESCARGAR SELECCIONADOS (Mantiene Carpetas)",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"Reportes_{fecha_zip}.zip",
+                    mime="application/zip",
+                    type="primary",
+                    use_container_width=True
+                )
+                st.caption("ℹ️ Este ZIP contiene el árbol de carpetas exacto. Al descomprimirlo, los archivos se acomodarán en sus carpetas correspondientes.")
