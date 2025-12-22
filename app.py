@@ -21,7 +21,7 @@ from PIL import Image, ImageOps, ImageFilter, ImageChops
 TAM_TIPO_BASE = 12
 TAM_SUCURSAL  = 13
 TAM_SECCION   = 11
-TAM_CONFECHOR = 11.5 
+TAM_CONFECHOR = 10.5 
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
