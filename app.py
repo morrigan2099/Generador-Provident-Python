@@ -18,18 +18,19 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-# Estos son tamaños BASE. Como usaremos Autoajuste (Shrink to fit),
-# PowerPoint reducirá estos tamaños si el texto es muy largo.
-TAM_TIPO_BASE = 12
-TAM_SUCURSAL  = 12
+# ESTRATEGIA: Para "Rellenar el placeholder", ponemos tamaños GRANDES.
+# La propiedad 'normAutofit' reducirá este tamaño automáticamente si el texto es largo.
+TAM_TIPO_BASE = 12   # ESTE SE MANTIENE FIJO EN 12 (Pedido explícitamente)
+TAM_SUCURSAL  = 12   # ESTE SE MANTIENE FIJO EN 12
 TAM_SECCION   = 12
-TAM_CONFECHOR = 16 # Tamaño grande inicial, se reducirá si no cabe
-TAM_CONCAT    = 14 # Tamaño medio inicial, se reducirá si no cabe
+TAM_CONFECHOR = 24   # INICIA GRANDE para rellenar (2 líneas)
+TAM_CONCAT    = 20   # INICIA GRANDE para rellenar todo el cuadro
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-DIAS_ES = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"]
+# Lunes es index 0 en python weekday()
+DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
 #  LÓGICA DE RECORTE IMAGEN
@@ -61,18 +62,19 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
 # --- FUNCIONES DE LÓGICA DE NEGOCIO ---
 
 def procesar_confechor_logica(fecha_dt, hora_str):
-    # 1. FECHA: dddd dd 'de' mmmm 'de' aaaa
-    # OJO: dt.strftime('%w') da 0 para domingo, 1 lunes...
-    # Ajustamos al índice de DIAS_ES
-    dia_sem_idx = int(fecha_dt.strftime('%w')) 
-    nombre_dia = DIAS_ES[dia_sem_idx]
+    # Lógica solicitada:
+    # Confecha = dddd dd 'de' mmmm 'de' aaaa
+    # Ejemplo: lunes 22 de diciembre de 2025
+    
+    dia_idx = fecha_dt.weekday() # 0 = Lunes
+    nombre_dia = DIAS_ES[dia_idx]
     nombre_mes = MESES_ES[fecha_dt.month - 1]
     dia = fecha_dt.day
     anio = fecha_dt.year
     
     linea_fecha = f"{nombre_dia} {dia} de {nombre_mes} de {anio}"
     
-    # 2. HORA (Lógica conservada)
+    # Conhora = Formato 12h con sufijos verbales
     hora_final = ""
     if hora_str and str(hora_str).lower() != "none":
         hh_mm = str(hora_str)[0:5] 
@@ -95,7 +97,7 @@ def procesar_confechor_logica(fecha_dt, hora_str):
         except:
             hora_final = hh_mm
     
-    # Retorna Fecha (Línea 1) y Hora (Línea 2)
+    # Retorna un solo bloque con salto de línea limpio
     return f"{linea_fecha.strip()}\n{hora_final.strip()}"
 
 # --- FUNCIONES DE IMAGEN Y TEXTO ---
@@ -129,7 +131,7 @@ def procesar_texto_maestro(texto, campo=""):
 
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
     t = re.sub(r'\s+', ' ', t)
-    # Si es Sección, lo forzamos a mayúsculas desde aquí para asegurar
+    # Convertimos Sección a MAYÚSCULAS desde la carga
     if campo == 'Seccion': return t.upper()
 
     palabras = t.lower().split()
@@ -169,7 +171,7 @@ def generar_pdf(pptx_bytes):
         return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v74", layout="wide")
+st.set_page_config(page_title="Provident Pro v75", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
@@ -178,7 +180,7 @@ if 'config' not in st.session_state:
     else:
         st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v74 - Final")
+st.title("🚀 Generador Pro v75 - Final")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -272,6 +274,9 @@ if 'raw_records' in st.session_state:
             st.session_state.archivos_en_memoria = []
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
+            # MAPA DE TAMAÑOS:
+            # - Tipo y Sucursal: 12 (Fijo)
+            # - Concat y Confechor: 20-24 (Grande con Autoajuste)
             mapa_tamanos = {
                 "<<Tipo>>": TAM_TIPO_BASE,
                 "<<Sucursal>>": TAM_SUCURSAL,
@@ -295,40 +300,37 @@ if 'raw_records' in st.session_state:
                 f_tipo = record.get('Tipo', 'Sin Tipo')
                 f_suc = record.get('Sucursal', '000')
                 
-                # --- LÓGICA CONCAT NUEVA ---
-                # Concatenar: Punto, Ruta, "Municipio" + dato, "Sección" + dato (Mayus)
-                
+                # --- LÓGICA CONCAT: RELLENAR PLACEHOLDER ---
+                # Estructura: Punto, Ruta, Municipio + dato, Sección + dato.
                 parts_concat = []
                 
-                # 1. Punto de reunion
+                # 1. Punto
                 val_punto = record.get('Punto de reunion')
                 if val_punto and str(val_punto).lower() != 'none':
                     parts_concat.append(str(val_punto))
                 
-                # 2. Ruta a seguir
+                # 2. Ruta
                 val_ruta = record.get('Ruta a seguir')
                 if val_ruta and str(val_ruta).lower() != 'none':
                     parts_concat.append(str(val_ruta))
                 
-                # 3. Municipio (con etiqueta fija)
+                # 3. Municipio
                 val_muni = record.get('Municipio')
                 if val_muni and str(val_muni).lower() != 'none':
                     parts_concat.append(f"Municipio {val_muni}")
                 
-                # 4. Sección (con etiqueta fija y mayúsculas)
+                # 4. Sección (Mayúsculas)
                 val_secc = record.get('Seccion')
                 if val_secc and str(val_secc).lower() != 'none':
                     parts_concat.append(f"Sección {str(val_secc).upper()}")
                 
                 f_concat_texto = ", ".join(parts_concat)
 
-                # Definir f_concat final dependiendo del Tipo
                 if f_tipo == "Actividad en Sucursal":
                     f_concat = f"Sucursal {f_suc}"
                 else:
                     f_concat = f_concat_texto
 
-                # Nombre del archivo
                 nom_arch_base = (
                     f"{dt.day} de {nombre_mes} de {dt.year} - {f_tipo}, {f_suc}"
                     + ("" if f_tipo == "Actividad en Sucursal" else f" - {f_concat}")
@@ -404,18 +406,18 @@ if 'raw_records' in st.session_state:
                                     tf.word_wrap = True 
                                     
                                     bodyPr = tf._element.bodyPr
-                                    # Limpieza de autofit previos
+                                    # Limpieza
                                     for child in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                         existing = bodyPr.find(qn(f'a:{child}'))
                                         if existing is not None:
                                             bodyPr.remove(existing)
 
-                                    # CONFIGURACIÓN DE AJUSTE (SIN DESBORDAR)
-                                    # Concat y Confechor deben rellenar sin salirse (Shrink on overflow)
+                                    # CONFIGURACIÓN DE AUTOAJUSTE
+                                    # "Rellenar sin desbordar" = Texto Grande + normAutofit (Shrink text on overflow)
                                     if tag == "<<Concat>>" or tag == "<<Confechor>>":
                                         bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
                                     
-                                    # Tipo crece la caja (para mantener tamaño 12 fijo)
+                                    # Tipo: Mantener fuente fija (12), crecer caja
                                     elif tag == "<<Tipo>>":
                                         bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                     
@@ -433,7 +435,7 @@ if 'raw_records' in st.session_state:
                                     run.font.bold = True
                                     run.font.color.rgb = AZUL_CELESTE
                                     
-                                    # Tamaños Base (se reducirán si se usa normAutofit y el texto es largo)
+                                    # Aplicar tamaño (12 para Tipo, Grande para los otros)
                                     final_size = mapa_tamanos.get(tag, 12)
                                     run.font.size = Pt(final_size)
 
