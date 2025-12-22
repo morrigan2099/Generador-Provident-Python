@@ -17,18 +17,29 @@ from io import BytesIO
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
-# --- CONFIGURACIÓN DE TAMAÑOS ---
+# --- CONFIGURACIÓN DE TAMAÑOS (CALIBRADOS) ---
+
+# 1. TAMAÑOS FIJOS (Reportes y Estándar)
 TAM_TIPO_BASE = 12  
 TAM_SECCION   = 12
-
-# TAMAÑOS SUCURSAL
 TAM_SUCURSAL_REPORTE = 12 
-TAM_SUCURSAL_POSTAL  = 18 
 
-# TAMAÑOS DE RELLENO
-TAM_MEDIANO_FIJO = 18  # Para Conhora
-TAM_RELLENO_MAX  = 80  # Para Sucursal
-TAM_RELLENO_MID  = 30  # Para Concat, Confecha, etc.
+# 2. TAMAÑOS ESPECÍFICOS SOLICITADOS (Postales/Relleno)
+# Estos son los tamaños de INICIO. 
+# La propiedad 'normAutofit' reducirá la fuente si el texto supera la caja,
+# pero nunca serán más grandes que esto.
+
+TAM_CONHORA_INIT = 32  # Solicitado: 32
+TAM_CONCAT_INIT  = 32  # Solicitado: 32
+TAM_CONFECHA_INIT= 28  # Solicitado: 28
+
+# Como Confechor es la unión de Fecha y Hora en Postal, usamos el menor para seguridad.
+TAM_CONFECHOR_INIT = 28 
+
+# 3. ANÁLISIS "BOCA DEL RÍO"
+# "Boca del Río" (~14 chars) llena una caja estándar a aprox 44pt.
+# Fijamos este tope para que las sucursales cortas (ej "505") no se vean gigantes.
+TAM_SUCURSAL_POSTAL_MAX = 44 
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -66,59 +77,38 @@ def obtener_fecha_texto(fecha_dt):
     return f"{nombre_dia} {fecha_dt.day} de {nombre_mes} de {fecha_dt.year}"
 
 def obtener_hora_texto(hora_str):
-    # 🔴 LÓGICA DE HORA CORREGIDA Y ROBUSTA 🔴
     if not hora_str or str(hora_str).lower() == "none": return ""
-    
     s_raw = str(hora_str).lower().strip()
     
-    # 1. Detectar indicadores AM/PM en el texto original
+    # Detección AM/PM
     es_pm = "p.m." in s_raw or "pm" in s_raw or "p. m." in s_raw
     es_am = "a.m." in s_raw or "am" in s_raw or "a. m." in s_raw
     
-    # 2. Extraer horas y minutos con Regex
     match = re.search(r'(\d{1,2}):(\d{2})', s_raw)
     
     if match:
         h = int(match.group(1))
         m = match.group(2)
         
-        # 3. Conversión inteligente a formato 24h para la lógica
-        
-        # Si dice PM y no es 12, sumamos 12 (ej: 1:00 pm -> 13:00)
-        if es_pm and h < 12:
-            h += 12
-        
-        # Si dice AM y es 12, es medianoche (00:00)
-        if es_am and h == 12:
-            h = 0
-            
-        # CASO ESPECIAL USUARIO: "0:00 p.m." -> Esto es Mediodía
-        if h == 0 and es_pm:
-            h = 12
+        # Corrección 12h -> 24h para lógica
+        if es_pm and h < 12: h += 12
+        if es_am and h == 12: h = 0
+        if h == 0 and es_pm: h = 12 
 
-        # 4. Asignar sufijos Provident
-        if 8 <= h <= 11: 
-            sufijo = "de la mañana"
-        elif h == 12: 
-            sufijo = "del día"
-        elif 13 <= h <= 19: 
-            sufijo = "de la tarde"
-        elif h >= 20: 
-            # Opcional: Podrías poner "de la noche" si quisieras, 
-            # pero mantendremos p.m. para ser consistentes con tu lógica previa
-            sufijo = "p.m." 
-        else: 
-            # Madrugada (0 a 7)
-            sufijo = "a.m."
+        # Asignación de Frases
+        if 8 <= h <= 11: sufijo = "de la mañana"
+        elif h == 12: sufijo = "del día"
+        elif 13 <= h <= 19: sufijo = "de la tarde"
+        elif h >= 20: sufijo = "p.m."
+        else: sufijo = "a.m."
 
-        # 5. Formato visual (12h sin ceros iniciales)
+        # Formato visual 12h
         h_mostrar = h
         if h > 12: h_mostrar -= 12
         if h == 0: h_mostrar = 12
         
         return f"{h_mostrar}:{m} {sufijo}"
     
-    # Si no tiene formato HH:MM detectable, devolvemos el original
     return hora_str
 
 def obtener_concat_texto(record):
@@ -190,14 +180,14 @@ def generar_pdf(pptx_bytes):
     except: return None
 
 # --- UI STREAMLIT ---
-st.set_page_config(page_title="Provident Pro v81", layout="wide")
+st.set_page_config(page_title="Provident Pro v83", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v81 - Final")
+st.title("🚀 Generador Pro v83 - Final")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -255,18 +245,22 @@ if 'raw_records' in st.session_state:
             st.session_state.archivos_en_memoria = []
             AZUL_CELESTE = RGBColor(0, 176, 240)
             
-            tam_sucursal_actual = TAM_SUCURSAL_POSTAL if modo == "Postales" else TAM_SUCURSAL_REPORTE
+            # Ajuste de tamaño Sucursal
+            tam_sucursal_actual = TAM_SUCURSAL_POSTAL_MAX if modo == "Postales" else TAM_SUCURSAL_REPORTE
 
+            # MAPA DE TAMAÑOS DEFINITIVO
             mapa_tamanos = {
                 "<<Tipo>>": TAM_TIPO_BASE,
                 "<<Seccion>>": TAM_SECCION,
-                "<<Sucursal>>": TAM_RELLENO_MAX, # Llenar
-                "<<Conhora>>": TAM_MEDIANO_FIJO, # Mediano fijo
-                # Resto llenar
-                "<<Confecha>>": TAM_RELLENO_MID,
-                "<<Consuc>>": TAM_RELLENO_MID,
-                "<<Concat>>": TAM_RELLENO_MID,
-                "<<Confechor>>": TAM_RELLENO_MID
+                "<<Sucursal>>": tam_sucursal_actual, # 44pt en postal (Tope Boca del Rio)
+                
+                # Tamaños solicitados
+                "<<Conhora>>": TAM_CONHORA_INIT,   # 32
+                "<<Concat>>": TAM_CONCAT_INIT,     # 32
+                "<<Consuc>>": TAM_CONCAT_INIT,     # 32 (Equivalente a Concat)
+                
+                "<<Confecha>>": TAM_CONFECHA_INIT, # 28
+                "<<Confechor>>": TAM_CONFECHOR_INIT# 28
             }
 
             for i, idx in enumerate(sel_idx):
@@ -284,7 +278,6 @@ if 'raw_records' in st.session_state:
 
                 # --- VARIABLES ---
                 txt_fecha = obtener_fecha_texto(dt)
-                # Usamos la nueva función robusta para la hora
                 txt_hora  = obtener_hora_texto(record.get('Hora', ''))
                 
                 f_confecha = txt_fecha
@@ -360,10 +353,12 @@ if 'raw_records' in st.session_state:
                                         existing = bodyPr.find(qn(f'a:{child}'))
                                         if existing is not None: bodyPr.remove(existing)
 
-                                    # LÓGICA AUTOAJUSTE
-                                    if tag in ["<<Sucursal>>", "<<Concat>>", "<<Consuc>>", "<<Confechor>>", "<<Confecha>>"]:
+                                    # LOGICA DE AUTOAJUSTE
+                                    # Todos los de relleno deben usar normAutofit para no desbordar
+                                    if tag in ["<<Sucursal>>", "<<Concat>>", "<<Consuc>>", "<<Confechor>>", "<<Confecha>>", "<<Conhora>>"]:
                                         bodyPr.append(tf._element.makeelement(qn('a:normAutofit')))
-                                    elif tag in ["<<Conhora>>", "<<Tipo>>"]:
+                                    # Tipo usa spAutoFit
+                                    elif tag == "<<Tipo>>":
                                         bodyPr.append(tf._element.makeelement(qn('a:spAutoFit')))
                                     
                                     tf.clear()
@@ -389,7 +384,7 @@ if 'raw_records' in st.session_state:
                 data_out = generar_pdf(pp_io.getvalue())
                 
                 if data_out:
-                    ext = ".pdf" if modo == "Reportes" else ".png"
+                    ext = ".pdf" if modo == "Reportes" else ".jpg"
                     nombre_archivo = f"{nom_arch_base[:120]}{ext}"
                     ruta_zip = f"{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/{modo}/{f_suc}/{nombre_archivo}"
 
@@ -397,12 +392,13 @@ if 'raw_records' in st.session_state:
                         bytes_finales = data_out
                         mime_type = "application/pdf"
                     else:
-                        images = convert_from_bytes(data_out, dpi=200, fmt='png') 
+                        # 🔴 COMPRESIÓN JPEG ALTA EFICIENCIA (<1MB)
+                        images = convert_from_bytes(data_out, dpi=170, fmt='jpeg') 
                         img_pil = images[0]
                         with BytesIO() as img_buf:
-                            img_pil.save(img_buf, format="PNG", optimize=True)
+                            img_pil.save(img_buf, format="JPEG", quality=85, optimize=True, progressive=True)
                             bytes_finales = img_buf.getvalue()
-                        mime_type = "image/png"
+                        mime_type = "image/jpeg"
 
                     st.session_state.archivos_en_memoria.append({
                         "Seleccionar": True,
