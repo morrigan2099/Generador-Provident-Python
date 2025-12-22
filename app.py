@@ -24,12 +24,12 @@ TAM_SECCION   = 12
 
 # 2. TAMAÑOS INDEPENDIENTES PARA SUCURSAL (Número)
 TAM_SUCURSAL_REPORTE = 12 
-TAM_SUCURSAL_POSTAL  = 18 
+TAM_SUCURSAL_POSTAL  = 24 
 
 # 3. TAMAÑOS DE RELLENO (Start Large -> Shrink to Fit)
 # Estos campos inician grandes (20-24pt). 
 # La propiedad 'normAutofit' reducirá el tamaño automáticamente si el texto es muy largo.
-TAM_RELLENO_GRANDE = 24 
+TAM_RELLENO_GRANDE = 60 
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
