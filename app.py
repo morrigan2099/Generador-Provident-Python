@@ -17,10 +17,10 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-TAM_TIPO_BASE = 12  # Base grande, sin textwrap forzado
+TAM_TIPO_BASE = 12  # SE MANTIENE EN 12 (Tamaño Real)
 TAM_SUCURSAL  = 12
 TAM_SECCION   = 11
-TAM_CONFECHOR = 12  # AUMENTADO A 12 PTS
+TAM_CONFECHOR = 12 
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
@@ -339,11 +339,15 @@ if 'raw_records' in st.session_state:
 
                     status_text.markdown(f"**Procesando:** `{nom_arch}`")
 
-                    # 🔴 CORRECCIÓN 2: TIPO (Natural)
-                    # No usamos textwrap.fill, dejamos el string puro
-                    f_tipo_procesado = f_tipo 
+                    # ==========================================================
+                    # 🔴 CORRECCIÓN APLICADA: TIPO en 2 líneas
+                    # ==========================================================
+                    # Usamos textwrap.fill con un ancho de 30 caracteres.
+                    # Esto forzará el salto de línea (\n) si el texto es largo,
+                    # permitiendo que el tamaño de fuente 12 se vea grande al apilarse.
+                    f_tipo_procesado = textwrap.fill(f_tipo, width=30)
                     
-                    # 🔴 CORRECCIÓN 3: CONFECHOR
+                    # 🔴 CORRECCIÓN: CONFECHOR
                     f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
 
                     reemplazos = {
@@ -426,13 +430,12 @@ if 'raw_records' in st.session_state:
                                         run.font.bold = True
                                         run.font.color.rgb = AZUL_CELESTE
                                         
+                                        # =================================================
+                                        # 🔴 CORRECCIÓN APLICADA: TAMAÑO DEFINITIVO
+                                        # =================================================
+                                        # Se ha eliminado el bloque 'if' que cambiaba a 48.
+                                        # Ahora siempre respeta TAM_TIPO_BASE (12).
                                         final_size = mapa_tamanos.get(tag, 11)
-                                        
-                                        # Solo reducir TIPO si es extremadamente largo (>60 chars)
-                                        # De lo contrario mantiene 66 pts
-                                        if tag == "<<Tipo>>":
-                                            if len(f_tipo) > 60:
-                                                final_size = 48 
                                         
                                         run.font.size = Pt(final_size)
 
@@ -443,8 +446,6 @@ if 'raw_records' in st.session_state:
                     if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
                         
-                        # 🔴 CORRECCIÓN 1: ESTRUCTURA ÁRBOL CON AÑO
-                        # Provident / AAAA / MM - Mes / Modo / Sucursal / Archivo
                         ruta_zip = (
                             f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/"
                             f"{modo}/{f_suc}/{nom_arch[:120]}{ext}"
