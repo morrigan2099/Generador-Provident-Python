@@ -25,13 +25,13 @@ TAM_SECCION   = 12
 
 # 2. TAMAÑO MEDIANO FIJO (Para Conhora)
 # Se mantendrá en este número. La caja crecerá si es necesario, pero la letra no cambia.
-TAM_MEDIANO_FIJO = 15 
+TAM_MEDIANO_FIJO = 22
 
 # 3. TAMAÑOS "RELLENAR PLACEHOLDER" (Start Huge -> Shrink to Fit)
 # Iniciamos con un número GIGANTE. La propiedad 'normAutofit' lo reducirá
 # hasta que toque los bordes del cuadro.
 TAM_RELLENO_MAX = 80  # Para Sucursal (Queremos que llene todo)
-TAM_RELLENO_MID = 24  # Para Concat, Confecha, etc.
+TAM_RELLENO_MID = 26  # Para Concat, Confecha, etc.
 
 # --- CONSTANTES ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
