@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v95", layout="wide")
+st.set_page_config(page_title="Provident Pro v96", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v95 - Blindado")
+st.title("🚀 Generador Pro v96")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -238,12 +238,10 @@ else:
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
-                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
-                    
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {fcc}")[:120] + ".png"
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
                     
-                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][f_tipo]))
+                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
                     except: continue
                     if ft == "Actividad en Sucursal" and not orig.get("Lista de asistencia") and len(prs.slides)>=4: prs.slides._sldIdLst.remove(prs.slides._sldIdLst[3])
 
@@ -372,155 +370,143 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO: CALENDARIO (TABLA HTML INDESTRUCTIBLE)
+    # MÓDULO: CALENDARIO (ESTRUCTURA VISIBLE)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario Visual":
         st.subheader("📅 Calendario de Actividades")
         
-        # 1. SELECTOR MES
+        # Selector Tabla
         if 'todas_tablas' in st.session_state:
-            nombres_tablas = list(st.session_state['todas_tablas'].keys())
-            idx_actual = 0
-            if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
-                idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
+            nt = list(st.session_state['todas_tablas'].keys())
+            curr = st.session_state.get('tabla_actual_nombre')
+            idx = nt.index(curr) if curr in nt else 0
+            new_t = st.selectbox("Seleccionar Mes (Tabla):", nt, index=idx)
             
-            nueva_tabla = st.selectbox("Seleccionar Mes (Tabla):", nombres_tablas, index=idx_actual)
-            
-            if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
-                with st.spinner(f"Cargando {nueva_tabla}..."):
-                    base_id = st.session_state['base_activa_id']
-                    table_id = st.session_state['todas_tablas'][nueva_tabla]
-                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_id}/{table_id}", headers=headers)
-                    recs = r_reg.json().get("records", [])
+            if new_t != curr:
+                with st.spinner(f"Cargando {new_t}..."):
+                    bid = st.session_state['base_activa_id']
+                    tid = st.session_state['todas_tablas'][new_t]
+                    rreg = requests.get(f"https://api.airtable.com/v0/{bid}/{tid}", headers=headers)
+                    recs = rreg.json().get("records", [])
                     st.session_state.raw_data_original = recs
                     st.session_state.raw_records = [
                         {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}}
                         for r in recs
                     ]
-                    st.session_state['tabla_actual_nombre'] = nueva_tabla
+                    st.session_state['tabla_actual_nombre'] = new_t
                 st.rerun()
 
         st.divider()
 
-        # 2. PROCESAMIENTO FECHAS
+        # Datos
         fechas_oc = {}
         fechas_lista = []
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
-                # Normalizar YYYY-MM-DD
-                f_short = f.split('T')[0]
-                if f_short not in fechas_oc: fechas_oc[f_short] = []
+                fs = f.split('T')[0] # YYYY-MM-DD
+                if fs not in fechas_oc: fechas_oc[fs] = []
                 th = None
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
-                fechas_oc[f_short].append({"id":r['id'], "thumb":th})
-                fechas_lista.append(f_short)
+                fechas_oc[fs].append({"id":r['id'], "thumb":th})
+                fechas_lista.append(fs)
 
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
-            # Auto-detectar año/mes
-            fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
-            meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
-            anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
+            # Auto-Detectar Mes
+            dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
+            mc = Counter([(d.year, d.month) for d in dt_objs])
+            ay, am = mc.most_common(1)[0][0]
             
-            st.write(f"📅 Visualizando: **{MESES_ES[mes_cal-1].capitalize()} {anio_cal}** ({len(fechas_lista)} eventos)")
+            st.write(f"📅 **{MESES_ES[am-1].capitalize()} {ay}** - {len(fechas_lista)} Eventos")
 
-            # 3. DIBUJAR CALENDARIO (TABLA HTML BLINDADA)
-            cal = calendar.Calendar(firstweekday=0) 
-            weeks = cal.monthdayscalendar(anio_cal, mes_cal)
-            
-            # ESTILOS CSS INCRUSTADOS PARA ASEGURAR VISIBILIDAD
-            # Usamos !important y colores explícitos para vencer temas oscuros
-            html = """
+            # ESTILOS CSS INYECTADOS
+            st.markdown("""
             <style>
-                .cal-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; font-family: sans-serif; }
-                .cal-th { background-color: #f0f2f6; color: #000; font-weight: bold; text-align: center; padding: 5px; border: 1px solid #ddd; width: 14.28%; }
-                .cal-td { 
-                    border: 1px solid #ddd; 
-                    height: 140px; 
-                    vertical-align: top; 
-                    padding: 0; 
-                    background-color: #fff !important; 
-                    position: relative; 
-                }
-                .cal-day-header {
-                    background-color: #f9f9f9;
-                    color: #000 !important;
-                    font-weight: 900;
-                    font-size: 16px;
-                    padding: 2px 5px;
-                    border-bottom: 1px solid #eee;
-                }
-                .cal-body {
-                    height: 90px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    overflow: hidden;
-                    background-color: #fff;
-                }
-                .cal-img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }
-                .cal-footer {
-                    background-color: #fff0f0;
-                    color: #D80000 !important;
-                    font-weight: bold;
-                    text-align: center;
-                    font-size: 14px;
-                    padding: 2px;
-                    border-top: 1px solid #ffcccc;
-                }
-                .no-img { color: #ccc; font-size: 12px; }
+            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+            .c-head { background: #eee; padding: 5px; text-align: center; font-weight: bold; border-radius: 4px; }
+            
+            .c-cell { 
+                background: white; 
+                border: 1px solid #ccc; 
+                border-radius: 4px;
+                min-height: 120px; 
+                display: flex; 
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .c-active { border-color: #00b0f0; background: #f0f8ff; }
+            
+            /* HEADER: DIA */
+            .c-day { 
+                font-weight: 900; 
+                font-size: 1.2em; 
+                padding: 2px 5px; 
+                background: #f9f9f9; 
+                border-bottom: 1px solid #eee;
+            }
+            
+            /* BODY: IMAGEN */
+            .c-body { 
+                flex-grow: 1; 
+                position: relative; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center;
+                background: #fff;
+            }
+            .c-img { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; }
+            .c-noimg { font-size: 0.7em; color: #ccc; }
+            
+            /* FOOTER: MAS */
+            .c-foot { 
+                background: #ffebeb; 
+                color: #d80000; 
+                font-weight: bold; 
+                text-align: center; 
+                font-size: 0.8em; 
+                padding: 2px;
+            }
             </style>
-            <table class='cal-table'>
-                <thead>
-                    <tr>
-                        <th class='cal-th'>LUN</th><th class='cal-th'>MAR</th><th class='cal-th'>MIÉ</th>
-                        <th class='cal-th'>JUE</th><th class='cal-th'>VIE</th><th class='cal-th'>SÁB</th>
-                        <th class='cal-th'>DOM</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
+            """, unsafe_allow_html=True)
+
+            # HTML BUILDER
+            cal = calendar.Calendar(firstweekday=0)
+            weeks = cal.monthdayscalendar(ay, am)
             
-            for week in weeks:
-                html += "<tr>"
-                for day in week:
-                    if day == 0:
-                        html += "<td class='cal-td' style='background-color: #f4f4f4 !important;'></td>"
+            h = "<div class='c-grid'>"
+            for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
+            
+            for wk in weeks:
+                for d in wk:
+                    if d == 0: h += "<div class='c-cell' style='border:none; background:transparent;'></div>"
                     else:
-                        f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
-                        acts = fechas_oc.get(f_key, [])
+                        k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
+                        acts = fechas_oc.get(k, [])
+                        act_cls = "c-active" if acts else ""
                         
-                        # 1. HEADER (Día)
-                        cell = f"<div class='cal-day-header'>{day}</div>"
+                        # Celda
+                        h += f"<div class='c-cell {act_cls}'>"
+                        h += f"<div class='c-day'>{d}</div>" # Header
                         
-                        # 2. BODY (Imagen)
-                        cell += "<div class='cal-body'>"
-                        if acts:
-                            if acts[0]['thumb']:
-                                cell += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
-                            else:
-                                cell += "<span class='no-img'>Sin foto</span>"
-                        else:
-                            cell += ""
-                        cell += "</div>"
+                        # Body
+                        h += "<div class='c-body'>"
+                        if acts and acts[0]['thumb']:
+                            h += f"<img src='{acts[0]['thumb']}' class='c-img'>"
+                        elif acts:
+                            h += "<span class='c-noimg'>Sin Foto</span>"
+                        h += "</div>"
                         
-                        # 3. FOOTER (+N)
+                        # Footer
                         if len(acts) > 1:
-                            cell += f"<div class='cal-footer'>+ {len(acts)-1} más</div>"
+                            h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         
-                        html += f"<td class='cal-td'>{cell}</td>"
-                html += "</tr>"
-            
-            html += "</tbody></table>"
-            st.markdown(html, unsafe_allow_html=True)
+                        h += "</div>"
+            h += "</div>"
+            st.markdown(h, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
     if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
