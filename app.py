@@ -26,7 +26,7 @@ MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
-#  FUNCIONES TÉCNICAS (Recorte, PDF, Textos)
+#  FUNCIONES TÉCNICAS
 # ============================================================
 
 def recorte_inteligente_bordes(img, umbral_negro=60):
@@ -126,27 +126,27 @@ def obtener_hora_texto(hora_str):
 def obtener_concat_texto(record):
     parts = []
     v_pt = record.get('Punto de reunion')
-    if v_pt and str(v_pt).lower()!='none': parts.append(str(v_pt))
+    if val_punto and str(val_punto).lower() != 'none': parts.append(str(val_punto))
     v_rt = record.get('Ruta a seguir')
-    if v_rt and str(v_rt).lower()!='none': parts.append(str(v_rt))
+    if val_ruta and str(val_ruta).lower() != 'none': parts.append(str(val_ruta))
     v_mun = record.get('Municipio')
-    if v_mun and str(v_mun).lower()!='none': parts.append(f"Municipio {v_mun}")
+    if val_mun and str(val_mun).lower() != 'none': parts.append(f"Municipio {val_mun}")
     v_sec = record.get('Seccion')
-    if v_sec and str(v_sec).lower()!='none': parts.append(f"Sección {str(v_sec).upper()}")
+    if val_sec and str(val_sec).lower() != 'none': parts.append(f"Sección {str(val_sec).upper()}")
     return ", ".join(parts)
 
 # ============================================================
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v88", layout="wide")
+st.set_page_config(page_title="Provident Pro v90", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v88 - Responsive")
+st.title("🚀 Generador Pro v90 - Alta Visibilidad")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -158,24 +158,24 @@ with st.sidebar:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         base_sel = st.selectbox("Base:", [""]+list(base_opts.keys()))
         if base_sel:
-            # Obtener tablas (Meses)
+            st.session_state['base_activa_id'] = base_opts[base_sel]
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             if r_tab.status_code == 200:
-                # LISTA COMPLETA DE TABLAS
                 tablas_data = r_tab.json()['tables']
-                tabla_opts = {t['name']: t['id'] for t in tablas_data}
+                st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
-                tabla_sel = st.selectbox("Tabla (Mes):", list(tabla_opts.keys()))
+                tabla_sel = st.selectbox("Tabla Inicial:", list(st.session_state['todas_tablas'].keys()))
                 
                 if st.button("🔄 CARGAR DATOS", type="primary"):
                     with st.spinner("Conectando..."):
-                        r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tabla_opts[tabla_sel]}", headers=headers)
+                        r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
                         recs = r_reg.json().get("records", [])
                         st.session_state.raw_data_original = recs
                         st.session_state.raw_records = [
                             {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}}
                             for r in recs
                         ]
+                        st.session_state['tabla_actual_nombre'] = tabla_sel
                     st.success(f"Cargados {len(recs)} registros")
                     st.rerun()
     st.divider()
@@ -235,7 +235,7 @@ else:
                     try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
                     except: dt = datetime.now(); nm = "error"
                     
-                    ft = rec.get('Tipo','Sin Tipo'); fs = rec.get('Sucursal','000')
+                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
@@ -376,8 +376,35 @@ else:
     # --------------------------------------------------------
     # MÓDULO: CALENDARIO
     # --------------------------------------------------------
-    elif modulo == "📅 Calendario":
-        st.subheader("📅 Calendario Visual")
+    elif modulo == "📅 Calendario Visual":
+        st.subheader("📅 Calendario de Actividades")
+        
+        # 1. SELECTOR DE MES (TABLA) FUNCIONAL
+        if 'todas_tablas' in st.session_state:
+            nombres_tablas = list(st.session_state['todas_tablas'].keys())
+            idx_actual = 0
+            if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
+                idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
+            
+            nueva_tabla = st.selectbox("Seleccionar Mes (Tabla):", nombres_tablas, index=idx_actual)
+            
+            if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
+                with st.spinner(f"Cargando {nueva_tabla}..."):
+                    base_id = st.session_state['base_activa_id']
+                    table_id = st.session_state['todas_tablas'][nueva_tabla]
+                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_id}/{table_id}", headers=headers)
+                    recs = r_reg.json().get("records", [])
+                    st.session_state.raw_data_original = recs
+                    st.session_state.raw_records = [
+                        {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}}
+                        for r in recs
+                    ]
+                    st.session_state['tabla_actual_nombre'] = nueva_tabla
+                st.rerun()
+
+        st.divider()
+
+        # 2. PROCESAMIENTO DE FECHAS
         fechas_oc = {}
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
@@ -390,57 +417,98 @@ else:
                     if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
                 fechas_oc[f].append({"id":r['id'], "thumb":th})
 
-        if not fechas_oc: st.warning("Sin fechas.")
+        if not fechas_oc:
+            st.warning("No hay fechas en esta tabla.")
         else:
-            f_dts = [datetime.strptime(k,'%Y-%m-%d') for k in fechas_oc.keys()]
-            anios = sorted(list(set([d.year for d in f_dts])))
-            asel = st.selectbox("Año:", anios)
-            m_disp = sorted(list(set([d.month for d in f_dts if d.year == asel])))
-            mnom = [MESES_ES[m-1].capitalize() for m in m_disp]
-            msel = st.selectbox("Mes:", mnom)
-            midx = MESES_ES.index(msel.lower()) + 1
+            first_date_str = list(fechas_oc.keys())[0]
+            dt_ref = datetime.strptime(first_date_str, '%Y-%m-%d')
+            anio_cal = dt_ref.year
+            mes_cal = dt_ref.month
 
-            st.divider()
-            cal = calendar.Calendar(firstweekday=6)
-            weeks = cal.monthdayscalendar(asel, midx)
+            # 3. DIBUJAR CALENDARIO (CSS GRID RESPONSIVE ALTA VISIBILIDAD)
+            cal = calendar.Calendar(firstweekday=0) 
+            weeks = cal.monthdayscalendar(anio_cal, mes_cal)
             
-            # --- CSS GRID PARA CALENDARIO RESPONSIVE ---
             st.markdown("""
             <style>
             .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-            .cal-day-header { text-align: center; font-weight: bold; font-size: 0.8em; background: #f0f2f6; padding: 5px; border-radius: 4px; }
-            .cal-cell { border: 1px solid #ddd; border-radius: 4px; min-height: 80px; display: flex; flex-direction: column; align-items: center; padding: 2px; background: white; overflow: hidden; }
-            .cal-cell.active { background: #e8f4f8; border-color: #00b0f0; }
-            .day-num { font-weight: bold; font-size: 0.9em; margin-bottom: 2px; }
-            .cal-img { width: 100%; height: auto; object-fit: cover; border-radius: 2px; }
-            .cal-more { font-size: 0.7em; color: red; font-weight: bold; margin-top: 2px; }
-            @media (max-width: 600px) { .cal-cell { min-height: 50px; } .day-num { font-size: 0.7em; } }
+            .cal-header { text-align: center; font-weight: bold; font-size: 0.8em; background: #f0f2f6; padding: 5px; border-radius: 4px; }
+            .cal-cell { 
+                border: 1px solid #ddd; 
+                border-radius: 4px; 
+                min-height: 120px; /* Mas alto para numeros grandes */
+                display: flex; 
+                flex-direction: column; 
+                align-items: center; 
+                padding: 2px; 
+                background: white; 
+                overflow: hidden; 
+                position: relative;
+            }
+            .cal-active { background: #e8f4f8; border-color: #00b0f0; }
+            
+            /* NUMEROS GIGANTES PARA ALTA VISIBILIDAD */
+            .day-n { 
+                font-weight: 900; 
+                font-size: 1.8em; /* GIGANTE */
+                margin-bottom: 2px; 
+                color: #000000;
+                text-shadow: 1px 1px 0px #fff;
+                z-index: 10;
+            }
+            
+            .cal-img { 
+                width: 100%; 
+                height: 70px; 
+                object-fit: cover; 
+                border-radius: 2px; 
+                margin-bottom: 2px;
+                opacity: 0.9;
+            }
+            
+            /* INDICADOR "+ N" GIGANTE */
+            .cal-more { 
+                font-size: 1.3em; /* GIGANTE */
+                color: #D80000; /* ROJO FUERTE */
+                font-weight: 900; 
+                margin-top: -15px;
+                background-color: rgba(255,255,255,0.8);
+                border-radius: 4px;
+                padding: 0 5px;
+                z-index: 20;
+            }
+            
+            .no-img { font-size: 0.6em; color: #999; margin-top: 15px; }
+            
+            @media (max-width: 600px) {
+                .day-n { font-size: 1.2em; }
+                .cal-more { font-size: 1.0em; }
+                .cal-cell { min-height: 80px; }
+            }
             </style>
             """, unsafe_allow_html=True)
 
-            # Headers
-            headers_html = "".join([f"<div class='cal-day-header'>{d}</div>" for d in ["DOM","LUN","MAR","MIÉ","JUE","VIE","SÁB"]])
+            html = "<div class='cal-grid'>"
+            dias_sem = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
+            for d in dias_sem: html += f"<div class='cal-header'>{d}</div>"
             
-            # Body
-            cells_html = ""
             for week in weeks:
                 for day in week:
-                    if day == 0: cells_html += "<div class='cal-cell' style='background:#f9f9f9; border:none;'></div>"
+                    if day == 0: html += "<div class='cal-cell' style='background:transparent; border:none;'></div>"
                     else:
-                        key = f"{asel}-{str(midx).zfill(2)}-{str(day).zfill(2)}"
-                        acts = fechas_oc.get(key, [])
-                        active_class = "active" if acts else ""
+                        f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
+                        acts = fechas_oc.get(f_key, [])
+                        active_cls = "cal-active" if acts else ""
                         
-                        content = f"<div class='day-num'>{day}</div>"
+                        cell_content = f"<div class='day-n'>{day}</div>"
                         if acts:
-                            if acts[0]['thumb']: content += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
-                            else: content += "<div style='font-size:0.6em; color:gray;'>Sin img</div>"
-                            
-                            if len(acts) > 1: content += f"<div class='cal-more'>+ {len(acts)-1}</div>"
+                            if acts[0]['thumb']: cell_content += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
+                            else: cell_content += "<div class='no-img'>Sin img</div>"
+                            if len(acts) > 1: cell_content += f"<div class='cal-more'>+ {len(acts)-1}</div>"
                         
-                        cells_html += f"<div class='cal-cell {active_class}'>{content}</div>"
-
-            st.markdown(f"<div class='cal-grid'>{headers_html}{cells_html}</div>", unsafe_allow_html=True)
+                        html += f"<div class='cal-cell {active_cls}'>{cell_content}</div>"
+            html += "</div>"
+            st.markdown(html, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
     if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
