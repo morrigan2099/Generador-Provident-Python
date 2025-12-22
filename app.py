@@ -24,7 +24,6 @@ from collections import Counter
 # ============================================================
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-# Semana inicia en Lunes (0)
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 # ============================================================
@@ -141,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v91", layout="wide")
+st.set_page_config(page_title="Provident Pro v92", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v91 - Visual & Estable")
+st.title("🚀 Generador Pro v92 - Visual Full")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -166,7 +165,6 @@ with st.sidebar:
                 tablas_data = r_tab.json()['tables']
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
-                # Selector inicial
                 tabla_sel = st.selectbox("Tabla Inicial:", list(st.session_state['todas_tablas'].keys()))
                 
                 if st.button("🔄 CARGAR DATOS", type="primary"):
@@ -240,8 +238,7 @@ else:
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
-                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {fcc}")[:120] + ".png"
                     
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
                     
@@ -374,12 +371,12 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO: CALENDARIO
+    # MÓDULO: CALENDARIO (ESTILO FOTO COMPLETA)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario Visual":
         st.subheader("📅 Calendario de Actividades")
         
-        # 1. SELECTOR DE MES (TABLA) FUNCIONAL
+        # 1. SELECTOR MES
         if 'todas_tablas' in st.session_state:
             nombres_tablas = list(st.session_state['todas_tablas'].keys())
             idx_actual = 0
@@ -404,16 +401,15 @@ else:
 
         st.divider()
 
-        # 2. PROCESAMIENTO DE FECHAS
+        # 2. PROCESAMIENTO FECHAS
         fechas_oc = {}
-        # Para el calendario, usamos un contador para saber cuál es el mes predominante en los datos
         fechas_lista = []
-        
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
                 if f not in fechas_oc: fechas_oc[f] = []
                 th = None
+                # SOLO POSTAL (ESTRICTO)
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
@@ -423,79 +419,81 @@ else:
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
-            # Detectar Mes/Año predominante
+            # Auto-detectar año/mes
             fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
-            # Convertir a (Año, Mes) y contar
             meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
-            # Obtener el más común (el que tiene más registros)
             anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
 
-            # 3. DIBUJAR CALENDARIO (CSS GRID RESPONSIVE ALTA VISIBILIDAD)
-            # firstweekday=0 es Lunes
+            # 3. DIBUJAR CALENDARIO (ESTILO FOTO COMPLETA)
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(anio_cal, mes_cal)
             
-            # CSS AJUSTADO PARA ALTA VISIBILIDAD
             st.markdown("""
             <style>
-            .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-            .cal-header { text-align: center; font-weight: bold; font-size: 0.8em; background: #f0f2f6; padding: 5px; border-radius: 4px; }
+            .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+            .cal-header { text-align: center; font-weight: bold; font-size: 0.8em; background: #f0f2f6; padding: 5px; border-radius: 2px; }
+            
             .cal-cell { 
-                border: 1px solid #ddd; 
-                border-radius: 4px; 
-                min-height: 110px; 
-                display: flex; 
-                flex-direction: column; 
-                align-items: center; 
-                padding: 2px; 
+                position: relative; /* Clave para superposición */
+                height: 120px; 
+                border: 1px solid #ccc; 
                 background: white; 
                 overflow: hidden; 
-                position: relative;
+                border-radius: 2px;
             }
-            .cal-active { background: #e8f4f8; border-color: #00b0f0; }
             
-            /* DÍA GRANDE Y CLARO */
+            /* IMAGEN QUE LLENA TODO */
+            .cal-img-bg {
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%; height: 100%;
+                object-fit: cover;
+                z-index: 1;
+            }
+            
+            /* DIA FLOTANTE */
             .day-n { 
-                font-weight: 900; 
-                font-size: 1.3em; /* Grande pero seguro */
-                margin-bottom: 2px; 
-                color: #000000;
+                position: absolute;
+                top: 3px; left: 3px;
                 z-index: 10;
-            }
-            
-            .cal-img { 
-                width: 100%; 
-                height: 65px; 
-                object-fit: cover; 
-                border-radius: 2px; 
-                margin-bottom: 2px;
-            }
-            
-            /* INDICADOR +N ROJO Y VISIBLE */
-            .cal-more { 
-                font-size: 1.1em; 
-                color: #D80000; /* Rojo fuerte */
                 font-weight: 900; 
-                margin-top: -10px;
-                background-color: rgba(255,255,255,0.9); /* Fondo para leerse sobre foto */
+                font-size: 1.4em; 
+                color: #000;
+                background-color: rgba(255,255,255,0.7);
+                padding: 0px 6px;
                 border-radius: 4px;
-                padding: 0 4px;
-                z-index: 20;
+                line-height: 1.2;
             }
             
-            .no-img { font-size: 0.7em; color: #999; margin-top: 10px; font-style: italic; }
+            /* INDICADOR +N FLOTANTE */
+            .cal-more { 
+                position: absolute;
+                bottom: 3px; right: 3px;
+                z-index: 10;
+                font-size: 1.1em; 
+                color: #D80000;
+                font-weight: 900; 
+                background-color: rgba(255,255,255,0.85);
+                padding: 1px 5px;
+                border-radius: 4px;
+            }
+            
+            .no-img-text {
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                font-size: 0.7em; color: #bbb;
+                z-index: 2;
+            }
             
             @media (max-width: 600px) {
-                .day-n { font-size: 1.1em; }
-                .cal-more { font-size: 0.9em; }
-                .cal-cell { min-height: 70px; }
-                .cal-img { height: 40px; }
+                .cal-cell { height: 90px; }
+                .day-n { font-size: 1.2em; }
             }
             </style>
             """, unsafe_allow_html=True)
 
             html = "<div class='cal-grid'>"
-            # Headers
             dias_sem = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]
             for d in dias_sem: html += f"<div class='cal-header'>{d}</div>"
             
@@ -505,16 +503,22 @@ else:
                     else:
                         f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
                         acts = fechas_oc.get(f_key, [])
-                        active_cls = "cal-active" if acts else ""
                         
-                        cell_content = f"<div class='day-n'>{day}</div>"
+                        # Contenido de celda
+                        content = f"<div class='day-n'>{day}</div>"
+                        
                         if acts:
-                            if acts[0]['thumb']: cell_content += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
-                            else: cell_content += "<div class='no-img'>Sin foto</div>"
+                            # Imagen de fondo
+                            if acts[0]['thumb']:
+                                content += f"<img src='{acts[0]['thumb']}' class='cal-img-bg'>"
+                            else:
+                                content += "<div class='no-img-text'>Sin foto</div>"
                             
-                            if len(acts) > 1: cell_content += f"<div class='cal-more'>+ {len(acts)-1}</div>"
+                            # Indicador +N
+                            if len(acts) > 1:
+                                content += f"<div class='cal-more'>+ {len(acts)-1}</div>"
                         
-                        html += f"<div class='cal-cell {active_cls}'>{cell_content}</div>"
+                        html += f"<div class='cal-cell'>{content}</div>"
             html += "</div>"
             st.markdown(html, unsafe_allow_html=True)
 
