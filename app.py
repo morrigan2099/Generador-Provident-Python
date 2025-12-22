@@ -9,7 +9,7 @@ import textwrap
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN # <--- NUEVO IMPORT NECESARIO PARA CENTRAR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 import subprocess, tempfile, zipfile
 from datetime import datetime
 from io import BytesIO
@@ -17,10 +17,10 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
-TAM_TIPO_BASE = 66  # <--- AUMENTADO +2 PTS (Antes 64)
+TAM_TIPO_BASE = 12  # Base grande, sin textwrap forzado
 TAM_SUCURSAL  = 12
 TAM_SECCION   = 11
-TAM_CONFECHOR = 11
+TAM_CONFECHOR = 12  # AUMENTADO A 12 PTS
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
@@ -68,34 +68,56 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
 # --- FUNCIONES DE LÓGICA DE NEGOCIO ---
 
 def procesar_confechor_logica(fecha_dt, hora_str):
+    """
+    Línea 1: Fecha (dd de mes de aaaa)
+    Línea 2: Hora formato 12h + Frase (mañana, día, tarde)
+    """
+    # PARTE 1: FECHA COMPLETA
     nombre_mes = MESES_ES[fecha_dt.month - 1]
     dia = fecha_dt.day
     anio = fecha_dt.year
     
-    linea_fecha_1 = f"{dia} de {nombre_mes}"
-    linea_fecha_2_inicio = f"de {anio}, "
+    linea_fecha = f"{dia} de {nombre_mes} de {anio}"
     
+    # PARTE 2: HORA (Formato 12h + Texto Custom)
     hora_final = ""
     if hora_str and str(hora_str).lower() != "none":
+        # Se asume entrada tipo HH:mm:ss o HH:mm
         hh_mm = str(hora_str)[0:5] 
         try:
             parts = hh_mm.split(':')
-            horas = int(parts[0])
+            h_24 = int(parts[0]) # Hora en formato 24 para lógica
             minutos = parts[1]
             
-            if 8 <= horas <= 11:
-                sufijo = "a.m."
+            # 1. Determinar el sufijo según la hora 24h
+            if 8 <= h_24 <= 11:
+                sufijo = "de la mañana"
+            elif h_24 == 12:
+                sufijo = "del día"
+            elif 13 <= h_24 <= 19: # 1 PM a 7 PM
+                sufijo = "de la tarde"
             else:
-                sufijo = "p.m."
+                # Caso borde (madrugada o noche tarde > 8pm) mantiene am/pm normal
+                sufijo = "p.m." if h_24 >= 12 else "a.m."
+
+            # 2. Convertir el número a formato 12h para mostrarlo
+            h_mostrar = h_24
+            if h_24 > 12:
+                h_mostrar = h_24 - 12
+            elif h_24 == 0:
+                h_mostrar = 12
             
-            hora_num = str(horas)
-            hora_final = f"{hora_num}:{minutos} {sufijo}"
+            # Quitar cero inicial al string del número (ej. "09" -> "9")
+            h_str = str(h_mostrar)
+            
+            hora_final = f"{h_str}:{minutos} {sufijo}"
+            
         except:
             hora_final = hh_mm
             
-    return f"{linea_fecha_1}\n{linea_fecha_2_inicio}{hora_final}"
+    return f"{linea_fecha}\n{hora_final}"
 
-# --- FUNCIONES DE IMAGEN ---
+# --- FUNCIONES DE IMAGEN Y TEXTO ---
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
     base_w, base_h = int(target_w_pt / 9525), int(target_h_pt / 9525)
@@ -181,7 +203,7 @@ if 'config' not in st.session_state:
     else:
         st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v69 - Centrado & Ajustado")
+st.title("🚀 Generador Pro v69 - Final")
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
@@ -317,7 +339,11 @@ if 'raw_records' in st.session_state:
 
                     status_text.markdown(f"**Procesando:** `{nom_arch}`")
 
-                    f_tipo_procesado = textwrap.fill(f_tipo, width=30)
+                    # 🔴 CORRECCIÓN 2: TIPO (Natural)
+                    # No usamos textwrap.fill, dejamos el string puro
+                    f_tipo_procesado = f_tipo 
+                    
+                    # 🔴 CORRECCIÓN 3: CONFECHOR
                     f_confechor_procesado = procesar_confechor_logica(dt, record.get('Hora', ''))
 
                     reemplazos = {
@@ -340,6 +366,7 @@ if 'raw_records' in st.session_state:
                                 xml_slides.remove(xml_slides[3])
 
                     for s_idx, slide in enumerate(prs.slides):
+                        # IMÁGENES
                         for shape in list(slide.shapes):
                             if shape.has_text_frame:
                                 tags_foto = [
@@ -377,17 +404,20 @@ if 'raw_records' in st.session_state:
                                             except:
                                                 pass
 
+                        # TEXTO
                         for shape in slide.shapes:
                             if shape.has_text_frame:
                                 for tag, val in reemplazos.items():
                                     if tag in shape.text_frame.text:
                                         tf = shape.text_frame
+                                        
+                                        # Habilitar ajuste natural de PowerPoint
+                                        tf.word_wrap = True 
+
                                         tf.clear()
                                         p = tf.paragraphs[0]
                                         
-                                        # ----------------------------------------------
-                                        # 🔴 CAMBIO CLAVE: CENTRADO DE CONFECHOR
-                                        # ----------------------------------------------
+                                        # Centrado exclusivo para Confechor
                                         if tag == "<<Confechor>>":
                                             p.alignment = PP_ALIGN.CENTER
                                         
@@ -398,10 +428,10 @@ if 'raw_records' in st.session_state:
                                         
                                         final_size = mapa_tamanos.get(tag, 11)
                                         
+                                        # Solo reducir TIPO si es extremadamente largo (>60 chars)
+                                        # De lo contrario mantiene 66 pts
                                         if tag == "<<Tipo>>":
-                                            if len(f_tipo) > 50:
-                                                final_size = 36 
-                                            elif len(f_tipo) > 30:
+                                            if len(f_tipo) > 60:
                                                 final_size = 48 
                                         
                                         run.font.size = Pt(final_size)
@@ -412,6 +442,9 @@ if 'raw_records' in st.session_state:
                     data_out = generar_pdf(pp_io.getvalue())
                     if data_out:
                         ext = ".pdf" if modo == "Reportes" else ".jpg"
+                        
+                        # 🔴 CORRECCIÓN 1: ESTRUCTURA ÁRBOL CON AÑO
+                        # Provident / AAAA / MM - Mes / Modo / Sucursal / Archivo
                         ruta_zip = (
                             f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {nombre_mes}/"
                             f"{modo}/{f_suc}/{nom_arch[:120]}{ext}"
