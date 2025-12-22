@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v94", layout="wide")
+st.set_page_config(page_title="Provident Pro v95", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v94 - Estructura Clara")
+st.title("🚀 Generador Pro v95 - Blindado")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -243,7 +243,7 @@ else:
                     
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
                     
-                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
+                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][f_tipo]))
                     except: continue
                     if ft == "Actividad en Sucursal" and not orig.get("Lista de asistencia") and len(prs.slides)>=4: prs.slides._sldIdLst.remove(prs.slides._sldIdLst[3])
 
@@ -372,11 +372,12 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO: CALENDARIO (ESTRUCTURA VERTICAL FLEX)
+    # MÓDULO: CALENDARIO (TABLA HTML INDESTRUCTIBLE)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario Visual":
         st.subheader("📅 Calendario de Actividades")
         
+        # 1. SELECTOR MES
         if 'todas_tablas' in st.session_state:
             nombres_tablas = list(st.session_state['todas_tablas'].keys())
             idx_actual = 0
@@ -401,11 +402,13 @@ else:
 
         st.divider()
 
+        # 2. PROCESAMIENTO FECHAS
         fechas_oc = {}
         fechas_lista = []
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
+                # Normalizar YYYY-MM-DD
                 f_short = f.split('T')[0]
                 if f_short not in fechas_oc: fechas_oc[f_short] = []
                 th = None
@@ -418,111 +421,105 @@ else:
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
+            # Auto-detectar año/mes
             fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
             meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
             anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
             
-            st.markdown(f"**Visualizando: {MESES_ES[mes_cal-1].capitalize()} {anio_cal}**")
+            st.write(f"📅 Visualizando: **{MESES_ES[mes_cal-1].capitalize()} {anio_cal}** ({len(fechas_lista)} eventos)")
 
+            # 3. DIBUJAR CALENDARIO (TABLA HTML BLINDADA)
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(anio_cal, mes_cal)
             
-            # CSS ESTRUCTURA FLEXBOX VERTICAL (Header - Body - Footer)
-            st.markdown("""
+            # ESTILOS CSS INCRUSTADOS PARA ASEGURAR VISIBILIDAD
+            # Usamos !important y colores explícitos para vencer temas oscuros
+            html = """
             <style>
-            .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-            .cal-header { text-align: center; font-weight: bold; font-size: 0.8em; background: #f0f2f6; padding: 5px; border-radius: 2px; }
-            
-            .cal-cell { 
-                display: flex;
-                flex-direction: column; /* Stack vertical */
-                height: 120px; 
-                border: 1px solid #ddd; 
-                border-radius: 4px; 
-                background: white; 
-                overflow: hidden;
-            }
-            .cal-active { border-color: #00b0f0; background-color: #f7fcff; }
-            
-            /* HEADER: DIA */
-            .day-row {
-                flex: 0 0 auto;
-                background-color: #f9f9f9;
-                padding: 2px 5px;
-                border-bottom: 1px solid #eee;
-                font-weight: 900;
-                font-size: 1.1em;
-                color: #000;
-            }
-            
-            /* BODY: IMAGEN (Ocupa todo el espacio restante) */
-            .img-row {
-                flex: 1 1 auto;
-                position: relative;
-                width: 100%;
-                overflow: hidden;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
-            .cal-img {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                display: block;
-            }
-            
-            .no-img { font-size: 0.7em; color: #ccc; font-style: italic; }
-            
-            /* FOOTER: INDICADOR (Si aplica) */
-            .footer-row {
-                flex: 0 0 auto;
-                background-color: #fff0f0;
-                color: #D80000;
-                font-weight: 900;
-                font-size: 0.9em;
-                text-align: center;
-                padding: 2px;
-                border-top: 1px solid #ffebeb;
-            }
-            
-            @media (max-width: 600px) {
-                .cal-cell { height: 90px; }
-                .day-row { font-size: 0.9em; }
-            }
+                .cal-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; font-family: sans-serif; }
+                .cal-th { background-color: #f0f2f6; color: #000; font-weight: bold; text-align: center; padding: 5px; border: 1px solid #ddd; width: 14.28%; }
+                .cal-td { 
+                    border: 1px solid #ddd; 
+                    height: 140px; 
+                    vertical-align: top; 
+                    padding: 0; 
+                    background-color: #fff !important; 
+                    position: relative; 
+                }
+                .cal-day-header {
+                    background-color: #f9f9f9;
+                    color: #000 !important;
+                    font-weight: 900;
+                    font-size: 16px;
+                    padding: 2px 5px;
+                    border-bottom: 1px solid #eee;
+                }
+                .cal-body {
+                    height: 90px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    background-color: #fff;
+                }
+                .cal-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                .cal-footer {
+                    background-color: #fff0f0;
+                    color: #D80000 !important;
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 14px;
+                    padding: 2px;
+                    border-top: 1px solid #ffcccc;
+                }
+                .no-img { color: #ccc; font-size: 12px; }
             </style>
-            """, unsafe_allow_html=True)
-
-            html = "<div class='cal-grid'>"
-            for d in ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"]: html += f"<div class='cal-header'>{d}</div>"
+            <table class='cal-table'>
+                <thead>
+                    <tr>
+                        <th class='cal-th'>LUN</th><th class='cal-th'>MAR</th><th class='cal-th'>MIÉ</th>
+                        <th class='cal-th'>JUE</th><th class='cal-th'>VIE</th><th class='cal-th'>SÁB</th>
+                        <th class='cal-th'>DOM</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
             for week in weeks:
+                html += "<tr>"
                 for day in week:
-                    if day == 0: html += "<div class='cal-cell' style='background:transparent; border:none;'></div>"
+                    if day == 0:
+                        html += "<td class='cal-td' style='background-color: #f4f4f4 !important;'></td>"
                     else:
                         f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
                         acts = fechas_oc.get(f_key, [])
-                        active_cls = "cal-active" if acts else ""
                         
-                        # Construcción HTML Interno
-                        # 1. Header
-                        cell_html = f"<div class='day-row'>{day}</div>"
+                        # 1. HEADER (Día)
+                        cell = f"<div class='cal-day-header'>{day}</div>"
                         
-                        # 2. Body (Image)
-                        cell_html += "<div class='img-row'>"
-                        if acts and acts[0]['thumb']:
-                            cell_html += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
-                        elif acts:
-                            cell_html += "<div class='no-img'>Sin Foto</div>"
-                        cell_html += "</div>"
+                        # 2. BODY (Imagen)
+                        cell += "<div class='cal-body'>"
+                        if acts:
+                            if acts[0]['thumb']:
+                                cell += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
+                            else:
+                                cell += "<span class='no-img'>Sin foto</span>"
+                        else:
+                            cell += ""
+                        cell += "</div>"
                         
-                        # 3. Footer (+N)
+                        # 3. FOOTER (+N)
                         if len(acts) > 1:
-                            cell_html += f"<div class='footer-row'>+ {len(acts)-1} más</div>"
+                            cell += f"<div class='cal-footer'>+ {len(acts)-1} más</div>"
                         
-                        html += f"<div class='cal-cell {active_cls}'>{cell_html}</div>"
-            html += "</div>"
+                        html += f"<td class='cal-td'>{cell}</td>"
+                html += "</tr>"
+            
+            html += "</tbody></table>"
             st.markdown(html, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
