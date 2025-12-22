@@ -19,9 +19,9 @@ from PIL import Image, ImageOps, ImageFilter, ImageChops
 
 # --- CONFIGURACIÓN DE TAMAÑOS ---
 TAM_TIPO_BASE = 12
-TAM_SUCURSAL  = 12
+TAM_SUCURSAL  = 13
 TAM_SECCION   = 11
-TAM_CONFECHOR = 12 
+TAM_CONFECHOR = 11.5 
 TAM_CONCAT    = 11
 
 # --- CONSTANTES ---
