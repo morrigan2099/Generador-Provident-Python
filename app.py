@@ -147,7 +147,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v101 - Nativo")
+st.title("🚀 Generador Pro v101 - Final Clean")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -206,13 +206,15 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- TABLA DE DATOS ---
+        # --- TABLA DE DATOS (FIXED) ---
         if 'sa_p' not in st.session_state: st.session_state.sa_p = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo"): st.session_state.sa_p=True; st.rerun()
         if c2.button("❌ Nada"): st.session_state.sa_p=False; st.rerun()
         df_view.insert(0,"Seleccionar",st.session_state.sa_p)
-        df_edit = st.data_editor(df_view, hide_index=True, use_container_width=True)
+        
+        # FIX: Eliminado use_container_width para evitar warnings
+        df_edit = st.data_editor(df_view, hide_index=True)
         sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
         
         if sel_idx:
@@ -295,13 +297,15 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- TABLA DE DATOS ---
+        # --- TABLA DE DATOS (FIXED) ---
         if 'sa_r' not in st.session_state: st.session_state.sa_r = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo", key="r1"): st.session_state.sa_r=True; st.rerun()
         if c2.button("❌ Nada", key="r2"): st.session_state.sa_r=False; st.rerun()
         df_view.insert(0,"Seleccionar",st.session_state.sa_r)
-        df_edit = st.data_editor(df_view, hide_index=True, use_container_width=True, key="ed_r")
+        
+        # FIX: Eliminado use_container_width
+        df_edit = st.data_editor(df_view, hide_index=True, key="ed_r")
         sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
         
         if sel_idx:
@@ -330,6 +334,7 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
+                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -409,14 +414,14 @@ else:
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
-                f_short = f.split('T')[0]
-                if f_short not in fechas_oc: fechas_oc[f_short] = []
+                fs = f.split('T')[0]
+                if fs not in fechas_oc: fechas_oc[fs] = []
                 th = None
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('large',{}).get('url')
-                fechas_oc[f_short].append({"id":r['id'], "thumb":th})
-                fechas_lista.append(f_short)
+                fechas_oc[fs].append({"id":r['id'], "thumb":th})
+                fechas_lista.append(fs)
 
         st.info(f"🔍 Eventos encontrados: {len(fechas_lista)}")
 
@@ -427,38 +432,40 @@ else:
             dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
             mc = Counter([(d.year, d.month) for d in dt_objs])
             ay, am = mc.most_common(1)[0][0]
-            
             st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
 
-            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS)
+            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS - GARANTIZADO)
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # Cabecera
+            # Cabecera Días
             cols = st.columns(7)
             for i, d in enumerate(["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]):
                 cols[i].markdown(f"<div style='text-align:center; font-weight:bold; background:#eee;'>{d}</div>", unsafe_allow_html=True)
             
-            # Semanas
+            # Cuerpo Semanas
             for week in weeks:
                 with st.container():
                     cols = st.columns(7)
                     for i, day in enumerate(week):
                         with cols[i]:
                             if day != 0:
-                                st.markdown(f"**{day}**") # HEADER
+                                # Header: Día
+                                st.markdown(f"**{day}**") 
                                 
                                 k = f"{ay}-{str(am).zfill(2)}-{str(day).zfill(2)}"
                                 acts = fechas_oc.get(k, [])
                                 
                                 if acts:
+                                    # Body: Imagen
                                     if acts[0]['thumb']:
-                                        st.image(acts[0]['thumb'], use_container_width=True) # BODY
+                                        st.image(acts[0]['thumb'], use_container_width=True)
                                     else:
                                         st.caption("Sin postal")
                                     
+                                    # Footer: Mas
                                     if len(acts) > 1:
-                                        st.error(f"+ {len(acts)-1} más") # FOOTER
+                                        st.error(f"+ {len(acts)-1} más")
                                 else:
                                     st.write("") 
                             else:
@@ -477,7 +484,8 @@ else:
             st.rerun()
         
         df_d = pd.DataFrame(st.session_state.archivos_en_memoria)
-        ed = st.data_editor(df_d[["Seleccionar", "Archivo", "Sucursal"]], hide_index=True, use_container_width=True)
+        # FIX: Eliminado use_container_width
+        ed = st.data_editor(df_d[["Seleccionar", "Archivo", "Sucursal"]], hide_index=True)
         idxs = ed[ed["Seleccionar"]==True].index.tolist()
         fins = [st.session_state.archivos_en_memoria[i] for i in idxs]
         
