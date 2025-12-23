@@ -271,12 +271,7 @@ else:
 
             if st.button("🔥 GENERAR POSTALES", type="primary"):
                 p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
-                # RESTAURADO: Configuración completa de variables
-                TAM_MAPA = {
-                    "<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, 
-                    "<<Conhora>>":32, "<<Confecha>>":32, # RESTAURADOS
-                    "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28
-                }
+                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, "<<Conhora>>":32, "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28, "<<Confecha>>":32}
                 
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
@@ -292,7 +287,6 @@ else:
                     ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
                     
-                    # RESTAURADO: Diccionario reps completo
                     reps = {
                         "<<Tipo>>":textwrap.fill(ft,width=35), 
                         "<<Sucursal>>":fs, 
@@ -300,8 +294,8 @@ else:
                         "<<Confechor>>":fcf, 
                         "<<Concat>>":fcc, 
                         "<<Consuc>>":fcc,
-                        "<<Confecha>>":tfe, # Individual
-                        "<<Conhora>>":tho   # Individual
+                        "<<Confecha>>":tfe,
+                        "<<Conhora>>":tho
                     }
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -331,11 +325,7 @@ else:
                                         if tag=="<<Tipo>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
                                         else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
                                         tf.clear(); p = tf.paragraphs[0]
-                                        
-                                        # RESTAURADO: Alineación centrada para todos los tags de info
-                                        if tag in ["<<Confechor>>", "<<Consuc>>", "<<Confecha>>", "<<Conhora>>"]: 
-                                            p.alignment = PP_ALIGN.CENTER
-                                            
+                                        if tag in ["<<Confechor>>", "<<Consuc>>", "<<Confecha>>", "<<Conhora>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
                                         run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
@@ -353,7 +343,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO REPORTES
+    # MÓDULO REPORTES (RESTAURADO COMPLETO)
     # --------------------------------------------------------
     elif modulo == "📄 Reportes":
         st.subheader("📄 Generador de Reportes")
@@ -383,7 +373,12 @@ else:
 
             if st.button("🔥 CREAR REPORTES", type="primary"):
                 p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
-                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24}
+                # RESTAURADO: Todas las variables y tamaños
+                TAM_MAPA = {
+                    "<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, 
+                    "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24,
+                    "<<Confechor>>":20, "<<Concat>>":12
+                }
                 
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
@@ -393,11 +388,26 @@ else:
                     
                     ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
+                    
+                    # LOGICA RESTAURADA: Calcular Confechor y Concat
+                    fcf = f"{tfe.strip()}\n{tho.strip()}"
+                    fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
+                    
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
                     
-                    reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
+                    # RESTAURADO: Diccionario completo
+                    reps = {
+                        "<<Tipo>>":textwrap.fill(ft,width=35), 
+                        "<<Sucursal>>":fs, 
+                        "<<Seccion>>":rec.get('Seccion'), 
+                        "<<Confecha>>":tfe, 
+                        "<<Conhora>>":tho, 
+                        "<<Consuc>>":fcs,
+                        "<<Confechor>>":fcf,
+                        "<<Concat>>":fcc
+                    }
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
                     except: continue
@@ -427,7 +437,11 @@ else:
                                         elif tag=="<<Conhora>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
                                         else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
                                         tf.clear(); p = tf.paragraphs[0]
-                                        if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
+                                        
+                                        # RESTAURADO: Alineación centrada para todos
+                                        if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>", "<<Confechor>>"]: 
+                                            p.alignment = PP_ALIGN.CENTER
+                                            
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
                                         run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
@@ -529,23 +543,19 @@ else:
                         acts = fechas_oc.get(k, [])
                         
                         h += f"<div class='c-cell'>"
-                        
-                        # HEADER
                         h += f"<div class='c-day'>{d}</div>"
                         
-                        # BODY
                         style_bg = ""
                         if acts and acts[0]['thumb']:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # FOOTER LOGIC
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
-                            h += f"<div class='c-foot'>&nbsp;</div>" # Azul sin texto
+                            h += f"<div class='c-foot'>&nbsp;</div>"
                         else:
-                            h += f"<div class='c-foot-empty'></div>" # Gris vacío
+                            h += f"<div class='c-foot-empty'></div>"
                         
                         h += "</div>"
             h += "</div>"
