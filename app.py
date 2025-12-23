@@ -115,88 +115,79 @@ def obtener_fecha_texto(fecha_dt):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v145", layout="wide")
+st.set_page_config(page_title="Provident Pro v146", layout="wide")
 
-# CSS AGRESIVO PARA MÓVIL Y CALENDARIO ANGOSTO
+# CSS AGRESIVO PARA MÓVIL Y AJUSTE DE ANCHO DE CALENDARIO
 st.markdown("""
 <style>
-    /* MARGEN SUPERIOR STREAMLIT */
+    /* MARGEN SUPERIOR PARA LA BARRA DE STREAMLIT */
     .block-container { 
         padding-top: 85px !important; 
-        padding-left: 5px !important;
-        padding-right: 5px !important;
+        padding-left: 2px !important;
+        padding-right: 2px !important;
     }
     
-    /* FORZAR 7 COLUMNAS Y EVITAR ESTIRAMIENTO */
+    /* FORZAR 7 COLUMNAS SIN DESBORDE */
     [data-testid="column"] { 
         min-width: 0px !important; 
         flex: 1 1 0% !important; 
+        padding: 1px !important;
     }
     div[data-testid="stHorizontalBlock"] { 
         display: flex !important; 
         flex-wrap: nowrap !important; 
-        gap: 1px !important; 
-        max-width: 400px; /* Limita el ancho del calendario */
-        margin: 0 auto;  /* Centra el calendario */
+        gap: 0px !important; 
+        width: 100% !important;
+        max-width: 500px;
+        margin: 0 auto;
     }
 
-    /* TÍTULO DE MES ELEGANTE */
+    /* TÍTULO DE MES COMPACTO */
     .cal-title-container {
         background: linear-gradient(135deg, #002060 0%, #00b0f0 100%);
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 4px;
+        margin-bottom: 10px;
         max-width: 400px;
         margin-left: auto;
         margin-right: auto;
         text-align: center;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     }
-    .cal-title-text {
-        color: white !important;
-        font-size: 1.4em;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        margin: 0;
-    }
+    .cal-title-text { color: white !important; font-size: 1.2em; font-weight: bold; text-transform: uppercase; margin: 0; }
 
-    .c-head { background: #002060; color: white; padding: 5px 0; text-align: center; font-weight: bold; font-size: 10px; border-radius: 2px; }
+    .c-head { background: #002060; color: white; padding: 2px 0; text-align: center; font-weight: bold; font-size: 10px; border-radius: 1px; }
     
-    /* CELDA DEL CALENDARIO COMPACTA */
+    /* CELDA DEL CALENDARIO ULTRA-RESPONSIVA */
     .c-cell-container { 
         position: relative; 
-        height: 85px; 
-        border: 1px solid #ccc; 
+        height: 70px; /* Reducido para que quepa en vertical */
+        border: 0.5px solid #ccc; 
         background: white; 
         overflow: hidden; 
         display: flex;
         flex-direction: column;
     }
-    .c-day { background: #00b0f0; color: white; font-weight: 900; font-size: 0.8em; text-align: center; width: 100%; height: 16px; line-height: 16px; }
+    .c-day { background: #00b0f0; color: white; font-weight: bold; font-size: 0.7em; text-align: center; width: 100%; height: 14px; line-height: 14px; }
     .c-body { flex-grow: 1; background-size: cover; background-position: center; }
-    .c-foot { height: 12px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 7px; line-height: 12px; }
+    .c-foot { height: 10px; background: #002060; color: white; text-align: center; font-size: 6px; line-height: 10px; }
 
-    /* BOTÓN INVISIBLE - DENTRO DE LA REJILLA */
+    /* BOTÓN INVISIBLE AJUSTADO */
     .stButton > button[key^="day_"] { 
         position: absolute !important; 
-        top: 0 !important; 
-        left: 0 !important; 
-        width: 100% !important; 
-        height: 100% !important; 
+        top: 0 !important; left: 0 !important; 
+        width: 100% !important; height: 100% !important; 
         background: transparent !important; 
-        border: none !important; 
-        color: transparent !important; 
+        border: none !important; color: transparent !important; 
         z-index: 10 !important; 
-        margin: 0 !important;
-        padding: 0 !important;
     }
 
-    /* BOTÓN VOLVER */
-    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; border: none !important; margin: 10px 0 !important; }
+    /* NAV TABLA DETALLE */
+    .table-nav { width: 100%; border-collapse: collapse; margin-bottom: 5px; table-layout: fixed; }
+    .nav-title b { color: #002060; font-size: 0.9em; display: block; }
+    .nav-title span { color: #333; font-size: 0.8em; display: block; }
 
-    /* NAV TABLA */
-    .table-nav { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
+    /* BOTÓN VOLVER */
+    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; margin: 5px 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -249,48 +240,48 @@ else:
                 fechas_oc[fk].append({"thumb": th, "raw_fields": r['fields']})
 
         if st.session_state.dia_seleccionado:
-            # (Vista detalle postal de v144 mantenida)
             k = st.session_state.dia_seleccionado
             evs = sorted(fechas_oc[k], key=lambda x: x['raw_fields'].get('Hora', ''))
             curr = st.session_state.idx_postal % len(evs)
             evt = evs[curr]
+            f_fields = evt['raw_fields']
             dt = datetime.strptime(k, '%Y-%m-%d')
             mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
 
             st.markdown(f"""
             <table class="table-nav">
                 <tr>
-                    <td style="width:50px;"><a href="?nav=prev" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:35px;height:35px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">←</a></td>
-                    <td style="text-align:center;"><div style="line-height:1.1;"><b style="color:#002060;display:block;">{mes_n}</b><span style="color:#333;font-size:0.9em;">{dia_n}</span></div></td>
-                    <td style="width:50px;"><a href="?nav=next" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:35px;height:35px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">→</a></td>
+                    <td style="width:45px;"><a href="?nav=prev" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">←</a></td>
+                    <td style="text-align:center;"><div style="line-height:1.1;"><b style="color:#002060;">{mes_n}</b><span style="color:#333;font-size:0.85em;">{dia_n}</span></div></td>
+                    <td style="width:45px;"><a href="?nav=next" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">→</a></td>
                 </tr>
             </table>
             """, unsafe_allow_html=True)
             
-            p = st.query_params
-            if p.get("nav") == "next": st.session_state.idx_postal += 1; st.query_params.clear(); st.rerun()
-            if p.get("nav") == "prev": st.session_state.idx_postal -= 1; st.query_params.clear(); st.rerun()
+            p_params = st.query_params
+            if p_params.get("nav") == "next": st.session_state.idx_postal += 1; st.query_params.clear(); st.rerun()
+            if p_params.get("nav") == "prev": st.session_state.idx_postal -= 1; st.query_params.clear(); st.rerun()
 
             if st.button("🔙 VOLVER AL CALENDARIO", key="btn_volver"): st.session_state.dia_seleccionado = None; st.rerun()
             
             if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
-            f_f = evt['raw_fields']
-            suc, tip, hor = f_f.get('Sucursal',''), f_f.get('Tipo',''), obtener_hora_texto(f_f.get('Hora',''))
-            ubi = obtener_concat_texto(f_f)
+            suc, tip, hor = f_fields.get('Sucursal',''), f_fields.get('Tipo',''), obtener_hora_texto(f_fields.get('Hora',''))
+            ubi = obtener_concat_texto(f_fields)
             st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}** | **⏰ {hor}**\n\n**📍 {ubi}**")
             gp = WHATSAPP_GROUPS.get(str(suc).lower().strip(), {"link": "", "name": "N/A"})
             msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
-            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
+            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:10px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
             if gp['link']: st.components.v1.html(jwa, height=80)
 
         else:
-            # VISTA CALENDARIO RESTRINGIDA
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
                 st.markdown(f"<div class='cal-title-container'><p class='cal-title-text'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</p></div>", unsafe_allow_html=True)
 
                 cols_h = st.columns(7)
-                for i, d in enumerate(["L","M","X","J","V","S","D"]): cols_h[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
+                dias_letras = ["L","M","X","J","V","S","D"]
+                for i, d in enumerate(dias_letras): cols_h[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
+                
                 weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
                 for week in weeks:
                     cols = st.columns(7)
@@ -304,7 +295,7 @@ else:
                                 <div class="c-cell-container">
                                     <div class="c-day">{d}</div>
                                     <div class="c-body" style="{bg}"></div>
-                                    <div class="{'c-foot' if evs else ''}">{f'+{len(evs)-1}' if len(evs)>1 else ''}</div>
+                                    <div class="{'c-foot' if len(evs)>1 else ''}">{f'+{len(evs)-1}' if len(evs)>1 else ''}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
                                 if evs:
@@ -314,7 +305,6 @@ else:
                                         st.rerun()
 
     elif mod in ["Postales", "Reportes"]:
-        # (Lógica de generación de v144 mantenida)
         st.subheader(f"📮 Generador de {mod}")
         df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
         for c in df.columns:
