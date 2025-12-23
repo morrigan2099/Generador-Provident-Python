@@ -140,44 +140,28 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v106", layout="wide")
-
-# --- HACK JAVASCRIPT: BLOQUEAR TECLADO EN SELECTBOX ---
-# Esto busca todos los inputs de los selectbox y les pone inputmode='none'
-# haciendo que el celular no abra el teclado, pero sí despliegue la lista.
-st.markdown("""
-<script>
-    const observer = new MutationObserver((mutations) => {
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        inputs.forEach(input => {
-            // Streamlit usa inputs para los selectbox.
-            // Si el input está dentro de un contenedor de select, lo bloqueamos.
-            if (input.getAttribute('aria-autocomplete') === 'list') {
-                input.setAttribute('inputmode', 'none');
-                input.setAttribute('readonly', 'true');
-            }
-        });
-    });
-    observer.observe(window.parent.document.body, { childList: true, subtree: true });
-</script>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="Provident Pro v107", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v106 - Mobile Touch")
+st.title("🚀 Generador Pro v107")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR ---
+# --- SIDEBAR MEJORADO (NO TECLADO) ---
 with st.sidebar:
     st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
-        base_sel = st.selectbox("Base:", [""]+list(base_opts.keys()))
+        
+        # CAMBIO 1: Expander + Radio evita abrir teclado
+        with st.expander("📂 Seleccionar Base", expanded=True):
+            base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
+        
         if base_sel:
             st.session_state['base_activa_id'] = base_opts[base_sel]
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
@@ -185,9 +169,11 @@ with st.sidebar:
                 tablas_data = r_tab.json()['tables']
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
-                tabla_sel = st.selectbox("Tabla Inicial:", list(st.session_state['todas_tablas'].keys()))
+                # CAMBIO 2: Expander + Radio para tablas
+                with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
+                    tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
-                if st.button("🔄 CARGAR DATOS", type="primary"):
+                if st.button("🔄 CARGAR DATOS", type="primary", use_container_width=True):
                     with st.spinner("Conectando..."):
                         r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
                         recs = r_reg.json().get("records", [])
@@ -205,7 +191,7 @@ with st.sidebar:
     if 'raw_records' in st.session_state:
         st.header("2. Módulos")
         modulo = st.radio("Ir a:", ["📮 Postales", "📄 Reportes", "📅 Calendario"], index=2)
-        if st.button("💾 Guardar Config"):
+        if st.button("💾 Guardar Config", use_container_width=True):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
             st.toast("Guardado")
 
@@ -395,17 +381,20 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (CSS FULL WIDTH + COLORES)
+    # MÓDULO CALENDARIO (CSS BACKGROUND-IMAGE + EXPANDER)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
         
+        # 1. Selector de Tabla CON RADIO (NO TECLADO)
         if 'todas_tablas' in st.session_state:
             nombres_tablas = list(st.session_state['todas_tablas'].keys())
             idx_actual = 0
             if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
                 idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
-            nueva_tabla = st.selectbox("Seleccionar Mes (Tabla):", nombres_tablas, index=idx_actual)
+            
+            with st.expander("📅 Cambiar Mes (Tabla)", expanded=False):
+                nueva_tabla = st.radio("Meses:", nombres_tablas, index=idx_actual, horizontal=True)
             
             if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
                 with st.spinner(f"Cargando {nueva_tabla}..."):
@@ -433,7 +422,9 @@ else:
                 th = None
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
-                    if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
+                    if isinstance(att, list) and len(att)>0: 
+                        # URL ORIGINAL (NO MINIATURA)
+                        th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
 
@@ -448,78 +439,65 @@ else:
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # CSS AJUSTADO: Full Width, Colores y Layout
+            # CSS: IMAGEN DE FONDO QUE LLENA TODO (background-size: cover)
             st.markdown("""
             <style>
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
             .c-head { 
-                background: #002060; /* Azul Oscuro */
+                background: #002060; 
                 color: white; 
-                padding: 5px; 
+                padding: 4px; 
                 text-align: center; 
                 font-weight: bold; 
-                border-radius: 4px; 
+                border-radius: 2px;
+                font-size: 14px;
             }
             .c-cell { 
                 background: white; 
                 border: 1px solid #ccc; 
-                border-radius: 4px;
-                height: 160px; /* ALTO FIJO */
+                border-radius: 2px;
+                height: 140px; 
                 display: flex; 
                 flex-direction: column;
                 justify-content: space-between;
                 overflow: hidden;
             }
             
-            /* HEADER: DIA (FONDO CELESTE, TEXTO BLANCO) */
             .c-day { 
                 flex: 0 0 auto;
-                background: #00b0f0; /* Celeste */
+                background: #00b0f0; 
                 color: white;
                 font-weight: 900; 
-                font-size: 1.1em; 
-                padding: 2px 0; 
+                font-size: 14px; 
                 text-align: center;
+                padding: 1px;
             }
             
-            /* BODY IMAGEN */
+            /* BODY: IMAGEN DE FONDO */
             .c-body { 
                 flex-grow: 1; 
                 width: 100%;
-                height: 100%; /* Forzar altura */
-                position: relative; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
-                background: #fff;
-                padding: 0; /* SIN PADDING */
-                overflow: hidden;
+                background-position: center;
+                background-repeat: no-repeat;
+                background-size: cover; /* LLENA TODO EL ESPACIO SIN DEFORMAR */
+                background-color: #f8f8f8;
             }
             
-            .c-img { 
-                width: 100%; 
-                height: 100%; 
-                object-fit: cover; /* LLENAR TODO EL HUECO */
-                display: block;
-            }
-            
-            .c-noimg { font-size: 0.7em; color: #ccc; font-style: italic; }
-            
-            /* FOOTER: MAS (FONDO AZUL OSCURO, TEXTO BLANCO) */
             .c-foot { 
                 flex: 0 0 auto;
-                background: #002060; /* Azul Oscuro */
-                color: #ffffff; /* BLANCO */
+                background: #002060; 
+                color: white; /* BLANCO */
                 font-weight: 900; 
                 text-align: center; 
-                font-size: 0.9em; 
-                padding: 2px;
+                font-size: 12px; 
+                padding: 1px;
             }
             
             @media (max-width: 600px) {
-                .c-cell { min-height: 100px; }
-                .c-day { font-size: 0.9em; }
-                .c-foot { font-size: 0.8em; }
+                .c-head { font-size: 10px; padding: 1px; }
+                .c-cell { height: 100px; }
+                .c-day { font-size: 11px; }
+                .c-foot { font-size: 10px; }
             }
             </style>
             """, unsafe_allow_html=True)
@@ -535,24 +513,20 @@ else:
                         acts = fechas_oc.get(k, [])
                         
                         h += f"<div class='c-cell'>"
+                        h += f"<div class='c-day'>{d}</div>" # HEADER
                         
-                        # 1. Header (Dia)
-                        h += f"<div class='c-day'>{d}</div>" 
+                        # BODY CON BACKGROUND IMAGE
+                        style_bg = ""
+                        if acts and acts[0]['thumb']:
+                            style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         
-                        # 2. Body (Imagen)
-                        h += "<div class='c-body'>"
-                        if acts:
-                            if acts[0]['thumb']:
-                                h += f"<img src='{acts[0]['thumb']}' class='c-img'>"
-                            else:
-                                h += "<span class='c-noimg'>Sin Foto</span>"
-                        h += "</div>"
+                        h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # 3. Footer (+N)
+                        # FOOTER
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         
-                        h += "</div>" 
+                        h += "</div>"
             h += "</div>"
             st.markdown(h, unsafe_allow_html=True)
 
