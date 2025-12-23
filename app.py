@@ -108,21 +108,22 @@ def obtener_concat_texto(record):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v155", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Provident Pro v156", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    header[data-testid="stHeader"] { visibility: visible !important; }
-    .block-container { padding-top: 1rem !important; padding-left: 5px !important; padding-right: 5px !important; }
+    /* ESPACIO PARA QUE NO SE COMA EL TÍTULO LA BARRA FIJA */
+    .block-container { padding-top: 80px !important; padding-left: 5px !important; padding-right: 5px !important; }
+    header[data-testid="stHeader"] { background-color: rgba(255,255,255,0.95) !important; }
 
-    /* CONTENEDOR RÍGIDO PARA CALENDARIO */
+    /* CONTENEDOR RÍGIDO */
     .cal-container {
         max-width: 400px;
         margin: 0 auto;
         width: 100%;
     }
 
-    /* TABLA HTML PURA PARA LAS 7 COLUMNAS */
+    /* TABLA HTML PURA */
     .cal-grid-table {
         width: 100%;
         border-collapse: collapse;
@@ -131,24 +132,25 @@ st.markdown("""
     .cal-grid-table th { background: #002060; color: white; font-size: 10px; padding: 5px 0; }
     .cal-grid-table td { 
         border: 0.5px solid #ccc; 
-        height: 100px; 
+        height: 140px; /* ALTO SOLICITADO */
         vertical-align: top; 
         position: relative; 
         padding: 0 !important;
+        background: white;
     }
 
-    /* ELEMENTOS DENTRO DE LA CELDA */
-    .cell-day-num { background: #00b0f0; color: white; font-weight: bold; font-size: 0.8em; text-align: center; height: 16px; }
-    .cell-img { height: 70px; background-size: cover; background-position: center; }
-    .cell-foot { height: 14px; background: #002060; color: white; text-align: center; font-size: 7px; line-height: 14px; }
+    /* ELEMENTOS INTERNOS */
+    .cell-day-num { background: #00b0f0; color: white; font-weight: bold; font-size: 0.9em; text-align: center; height: 18px; line-height: 18px; }
+    .cell-img { height: 108px; background-size: cover; background-position: center; background-repeat: no-repeat; }
+    .cell-foot { height: 14px; background: #002060; color: white; text-align: center; font-size: 8px; line-height: 14px; }
 
-    /* BOTÓN INVISIBLE - FORZADO DENTRO DE LA TABLA */
+    /* BOTÓN INVISIBLE - POSICIONADO SOBRE LA CELDA DE 140PX */
     .stButton > button[key^="day_"] {
         position: absolute !important;
         top: 0 !important;
         left: 0 !important;
         width: 100% !important;
-        height: 100% !important;
+        height: 140px !important;
         background: transparent !important;
         border: none !important;
         color: transparent !important;
@@ -157,9 +159,8 @@ st.markdown("""
         padding: 0 !important;
     }
 
-    /* NAV POSTALES */
-    .nav-title { text-align: center; line-height: 1.2; }
-    .nav-title b { color: #002060; font-size: 1.1em; display: block; text-transform: uppercase; }
+    .nav-title { text-align: center; line-height: 1.2; padding-top: 10px; }
+    .nav-title b { color: #002060; font-size: 1.2em; display: block; text-transform: uppercase; }
     div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; }
 </style>
 """, unsafe_allow_html=True)
@@ -193,13 +194,13 @@ with st.sidebar:
                     st.rerun()
     st.divider()
     if 'raw_records' in st.session_state:
-        if st.button("📆 Ver Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.session_state.dia_seleccionado = None; st.rerun()
-        if st.button("📮 Generar Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
-        if st.button("📄 Generar Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
+        if st.button("📆 Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.session_state.dia_seleccionado = None; st.rerun()
+        if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
+        if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
 
 # --- MAIN ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Conecta Airtable en el sidebar.")
+    st.info("👈 Selecciona una base en el menú lateral.")
 else:
     mod = st.session_state.active_module
 
@@ -214,7 +215,7 @@ else:
                 fechas_oc[fk].append({"thumb": th, "raw": r['fields']})
 
         if st.session_state.dia_seleccionado:
-            # VISTA DETALLE
+            # VISTA DETALLE CON CABECERA DE 3 COLUMNAS
             k = st.session_state.dia_seleccionado
             evs = sorted(fechas_oc[k], key=lambda x: x['raw'].get('Hora',''))
             curr = st.session_state.idx_postal % len(evs)
@@ -230,7 +231,7 @@ else:
             with c3:
                 if len(evs) > 1 and st.button("➡️", key="n_nav"): st.session_state.idx_postal += 1; st.rerun()
 
-            if st.button("🔙 REGRESAR AL MES", key="btn_volver"):
+            if st.button("🔙 VOLVER AL CALENDARIO", key="btn_volver"):
                 st.session_state.dia_seleccionado = None; st.rerun()
 
             if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
@@ -242,20 +243,18 @@ else:
             sk = str(suc).lower().strip()
             gp = WHATSAPP_GROUPS.get(sk, {"link":"", "name":"N/A"})
             msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
-            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:15px;text-align:center;border-radius:10px;cursor:pointer;font-weight:bold;'>📲 Copiar y abrir WhatsApp</div>"
+            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:15px;text-align:center;border-radius:10px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
             if gp['link']: st.components.v1.html(jwa, height=80)
         
         else:
-            # VISTA MES (TABLA RÍGIDA)
+            # VISTA CALENDARIO (TABLA HTML CON ALTO 140PX)
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
                 st.markdown(f"<div class='cal-container'>", unsafe_allow_html=True)
-                st.markdown(f"<div style='background:linear-gradient(135deg,#002060,#00b0f0);padding:10px;border-radius:8px;text-align:center;color:white;font-weight:bold;text-transform:uppercase;margin-bottom:10px;'>{MESES_ES[dt_ref.month-1]} {dt_ref.year}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background:linear-gradient(135deg,#002060,#00b0f0);padding:15px;border-radius:10px;text-align:center;color:white;font-weight:bold;text-transform:uppercase;margin-bottom:15px;box-shadow:0 4px 10px rgba(0,0,0,0.2);'>{MESES_ES[dt_ref.month-1]} {dt_ref.year}</div>", unsafe_allow_html=True)
                 
-                # Inyectar botones invisibles antes de la tabla para que existan en el DOM
                 weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
                 
-                # Crear la tabla visual
                 table_html = '<table class="cal-grid-table"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
                 for week in weeks:
                     table_html += '<tr>'
@@ -272,14 +271,12 @@ else:
                             table_html += f'<div class="cell-day-num">{day}</div>'
                             table_html += f'<div class="cell-img" style="{bg}"></div>'
                             table_html += f'<div class="cell-foot">{label}</div>'
-                            # Aquí se asocia el botón mediante CSS
                             table_html += '</td>'
                     table_html += '</tr>'
                 table_html += '</table>'
                 st.markdown(table_html, unsafe_allow_html=True)
 
-                # Inyectar los botones de Streamlit justo después
-                # El CSS se encarga de posicionarlos sobre la tabla
+                # Generar los botones de Streamlit para la detección de clicks
                 for week in weeks:
                     cols = st.columns(7)
                     for i, day in enumerate(week):
@@ -294,7 +291,7 @@ else:
                 st.markdown("</div>", unsafe_allow_html=True)
 
     # --------------------------------------------------------
-    # MÓDULO POSTALES Y REPORTES
+    # MÓDULOS POSTALES Y REPORTES
     # --------------------------------------------------------
     elif mod in ["Postales", "Reportes"]:
         st.subheader(f"Generador de {mod}")
@@ -315,7 +312,7 @@ else:
             for t in tipos:
                 st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archs, key=f"p_{t}")
 
-            if st.button("🚀 GENERAR PACK COMPLETO"):
+            if st.button("🚀 PROCESAR PACK"):
                 p_bar = st.progress(0); zip_data = []
                 for i, ix in enumerate(idx_list):
                     rec, orig = st.session_state.raw_records[ix]['fields'], st.session_state.raw_data_original[ix]['fields']
