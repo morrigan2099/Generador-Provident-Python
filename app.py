@@ -115,9 +115,9 @@ def obtener_fecha_texto(fecha_dt):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v144", layout="wide")
+st.set_page_config(page_title="Provident Pro v145", layout="wide")
 
-# CSS AGRESIVO PARA MÓVIL Y CALENDARIO VERTICAL
+# CSS AGRESIVO PARA MÓVIL Y CALENDARIO ANGOSTO
 st.markdown("""
 <style>
     /* MARGEN SUPERIOR STREAMLIT */
@@ -127,9 +127,18 @@ st.markdown("""
         padding-right: 5px !important;
     }
     
-    /* FORZAR 7 COLUMNAS */
-    [data-testid="column"] { min-width: 0px !important; flex: 1 1 0% !important; }
-    div[data-testid="stHorizontalBlock"] { display: flex !important; flex-wrap: nowrap !important; gap: 1px !important; }
+    /* FORZAR 7 COLUMNAS Y EVITAR ESTIRAMIENTO */
+    [data-testid="column"] { 
+        min-width: 0px !important; 
+        flex: 1 1 0% !important; 
+    }
+    div[data-testid="stHorizontalBlock"] { 
+        display: flex !important; 
+        flex-wrap: nowrap !important; 
+        gap: 1px !important; 
+        max-width: 400px; /* Limita el ancho del calendario */
+        margin: 0 auto;  /* Centra el calendario */
+    }
 
     /* TÍTULO DE MES ELEGANTE */
     .cal-title-container {
@@ -137,40 +146,36 @@ st.markdown("""
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 15px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
         text-align: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     }
     .cal-title-text {
         color: white !important;
-        font-size: 1.6em;
+        font-size: 1.4em;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 2px;
         margin: 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
 
-    /* CALENDARIO VERTICAL / ANGOSTO */
-    .cal-wrapper {
-        max-width: 500px;
-        margin: 0 auto;
-    }
-
-    .c-head { background: #002060; color: white; padding: 5px 0; text-align: center; font-weight: bold; font-size: 11px; border-radius: 2px; }
+    .c-head { background: #002060; color: white; padding: 5px 0; text-align: center; font-weight: bold; font-size: 10px; border-radius: 2px; }
     
-    /* CELDA DEL CALENDARIO */
+    /* CELDA DEL CALENDARIO COMPACTA */
     .c-cell-container { 
         position: relative; 
-        height: 95px; 
+        height: 85px; 
         border: 1px solid #ccc; 
         background: white; 
         overflow: hidden; 
         display: flex;
         flex-direction: column;
     }
-    .c-day { background: #00b0f0; color: white; font-weight: 900; font-size: 0.85em; text-align: center; width: 100%; height: 18px; line-height: 18px; }
+    .c-day { background: #00b0f0; color: white; font-weight: 900; font-size: 0.8em; text-align: center; width: 100%; height: 16px; line-height: 16px; }
     .c-body { flex-grow: 1; background-size: cover; background-position: center; }
-    .c-foot { height: 14px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 7px; line-height: 14px; }
+    .c-foot { height: 12px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 7px; line-height: 12px; }
 
     /* BOTÓN INVISIBLE - DENTRO DE LA REJILLA */
     .stButton > button[key^="day_"] { 
@@ -183,7 +188,6 @@ st.markdown("""
         border: none !important; 
         color: transparent !important; 
         z-index: 10 !important; 
-        cursor: pointer !important;
         margin: 0 !important;
         padding: 0 !important;
     }
@@ -191,10 +195,8 @@ st.markdown("""
     /* BOTÓN VOLVER */
     div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; border: none !important; margin: 10px 0 !important; }
 
-    /* TABLA NAV DETALLE */
+    /* NAV TABLA */
     .table-nav { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
-    .nav-title b { color: #002060; font-size: 1em; display: block; text-transform: uppercase; }
-    .nav-title span { color: #333; font-size: 0.8em; display: block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,15 +245,15 @@ else:
             if f:
                 fk = f.split('T')[0]
                 if fk not in fechas_oc: fechas_oc[fk] = []
-                th = r['fields']['Postal'][0].get('url') if 'Postal' in r['fields'] else None
+                th = r['fields'].get('Postal', [{}])[0].get('url')
                 fechas_oc[fk].append({"thumb": th, "raw_fields": r['fields']})
 
         if st.session_state.dia_seleccionado:
+            # (Vista detalle postal de v144 mantenida)
             k = st.session_state.dia_seleccionado
             evs = sorted(fechas_oc[k], key=lambda x: x['raw_fields'].get('Hora', ''))
             curr = st.session_state.idx_postal % len(evs)
             evt = evs[curr]
-            f_fields = evt['raw_fields']
             dt = datetime.strptime(k, '%Y-%m-%d')
             mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
 
@@ -259,7 +261,7 @@ else:
             <table class="table-nav">
                 <tr>
                     <td style="width:50px;"><a href="?nav=prev" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:35px;height:35px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">←</a></td>
-                    <td><div class="nav-title"><b>{mes_n}</b><span>{dia_n}</span></div></td>
+                    <td style="text-align:center;"><div style="line-height:1.1;"><b style="color:#002060;display:block;">{mes_n}</b><span style="color:#333;font-size:0.9em;">{dia_n}</span></div></td>
                     <td style="width:50px;"><a href="?nav=next" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:35px;height:35px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">→</a></td>
                 </tr>
             </table>
@@ -272,26 +274,20 @@ else:
             if st.button("🔙 VOLVER AL CALENDARIO", key="btn_volver"): st.session_state.dia_seleccionado = None; st.rerun()
             
             if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
-            
-            suc, tip, hor = f_fields.get('Sucursal',''), f_fields.get('Tipo',''), obtener_hora_texto(f_fields.get('Hora',''))
-            ubi = obtener_concat_texto(f_fields)
+            f_f = evt['raw_fields']
+            suc, tip, hor = f_f.get('Sucursal',''), f_f.get('Tipo',''), obtener_hora_texto(f_f.get('Hora',''))
+            ubi = obtener_concat_texto(f_f)
             st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}** | **⏰ {hor}**\n\n**📍 {ubi}**")
-            
             gp = WHATSAPP_GROUPS.get(str(suc).lower().strip(), {"link": "", "name": "N/A"})
             msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
             jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
             if gp['link']: st.components.v1.html(jwa, height=80)
 
         else:
-            # VISTA CALENDARIO VERTICAL
-            st.markdown("<div class='cal-wrapper'>", unsafe_allow_html=True)
+            # VISTA CALENDARIO RESTRINGIDA
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
-                st.markdown(f"""
-                <div class='cal-title-container'>
-                    <p class='cal-title-text'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<div class='cal-title-container'><p class='cal-title-text'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</p></div>", unsafe_allow_html=True)
 
                 cols_h = st.columns(7)
                 for i, d in enumerate(["L","M","X","J","V","S","D"]): cols_h[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
@@ -309,16 +305,16 @@ else:
                                     <div class="c-day">{d}</div>
                                     <div class="c-body" style="{bg}"></div>
                                     <div class="{'c-foot' if evs else ''}">{f'+{len(evs)-1}' if len(evs)>1 else ''}</div>
-                                    </div>
+                                </div>
                                 """, unsafe_allow_html=True)
                                 if evs:
                                     if st.button(" ", key=f"day_{k}"):
                                         st.session_state.dia_seleccionado = k
                                         st.session_state.idx_postal = 0
                                         st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
     elif mod in ["Postales", "Reportes"]:
+        # (Lógica de generación de v144 mantenida)
         st.subheader(f"📮 Generador de {mod}")
         df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
         for c in df.columns:
@@ -359,11 +355,11 @@ else:
                             for shp in slide.shapes:
                                 if shp.has_text_frame:
                                     reps = {"<<Tipo>>":ft, "<<Sucursal>>":fs, "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
-                                    for t_key, v in reps.items():
-                                        if t_key in shp.text_frame.text:
+                                    for t_k, v in reps.items():
+                                        if t_k in shp.text_frame.text:
                                             tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
                                             tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-                                            run = p.add_run(); run.text=str(v); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240); run.font.size=Pt(28 if t_key=="<<Confechor>>" else 24)
+                                            run = p.add_run(); run.text=str(v); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240); run.font.size=Pt(28 if t_k=="<<Confechor>>" else 24)
                         buf = BytesIO(); prs.save(buf)
                         dout = generar_pdf(buf.getvalue())
                         if dout:
