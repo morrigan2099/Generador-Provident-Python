@@ -158,63 +158,58 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. FORZAR TEMA CLARO Y COLORES (CSS GLOBAL)
+# 2. ESTILOS CSS PERSONALIZADOS (COLORES SOLICITADOS)
 st.markdown("""
 <style>
-    /* FORZAR FONDO BLANCO Y TEXTO NEGRO GLOBALMENTE */
+    /* FORZAR TEMA CLARO GLOBAL */
     [data-testid="stAppViewContainer"] {
         background-color: #ffffff !important;
         color: #000000 !important;
     }
     [data-testid="stSidebar"] {
-        background-color: #f8f9fa !important; /* Gris muy claro para sidebar */
-        border-right: 1px solid #002060;
-    }
-    [data-testid="stHeader"] {
-        background-color: rgba(0,0,0,0);
+        background-color: #f8f9fa !important;
     }
     
-    /* TEXTOS */
-    h1, h2, h3, h4, h5, h6, p, div, label {
-        color: #000000 !important;
-        font-family: sans-serif;
-    }
-    
-    /* BOTONES */
+    /* BOTONES (Azul Oscuro Fondo, Blanco Texto) */
     div.stButton > button {
-        background-color: #002060 !important; /* AZUL OSCURO */
-        color: #ffffff !important;
-        border: none;
-        border-radius: 4px;
-        font-weight: bold;
-    }
-    div.stButton > button:hover {
-        background-color: #00b0f0 !important; /* CELESTE HOVER */
-        color: #ffffff !important;
-    }
-    
-    /* RADIO BUTTONS (Sidebar) */
-    div[role="radiogroup"] label {
-        background-color: #ffffff !important;
-        border: 1px solid #eee;
-        color: #000000 !important;
-    }
-    div[role="radiogroup"] div[data-checked="true"] label {
-        background-color: #00b0f0 !important; /* CELESTE SELECCIONADO */
-        color: #ffffff !important;
-    }
-    
-    /* EXPANDERS */
-    .streamlit-expanderHeader {
-        background-color: #ffffff !important;
-        color: #002060 !important;
-        font-weight: bold;
-    }
-    
-    /* DATA EDITOR HEADERS */
-    [data-testid="stDataFrameResizable"] th {
         background-color: #002060 !important;
         color: #ffffff !important;
+        font-weight: bold;
+        border: none;
+    }
+    div.stButton > button:hover {
+        background-color: #00b0f0 !important; /* Celeste Hover */
+    }
+    
+    /* RADIO BUTTONS (Selección Celeste) */
+    div[role="radiogroup"] label {
+        color: #000000 !important;
+    }
+    div[role="radiogroup"] div[data-checked="true"] {
+        background-color: #00b0f0 !important;
+        border-color: #00b0f0 !important;
+    }
+    
+    /* ENCABEZADOS DE TABLA (Celeste Fondo, Blanco Texto) */
+    [data-testid="stDataFrameResizable"] th {
+        background-color: #00b0f0 !important;
+        color: #ffffff !important;
+    }
+    
+    /* CALENDARIO ESTILOS (Mantenemos tu formato) */
+    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0; padding-bottom: 10px; color: #333; }
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
+    .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+    .c-cell { background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+    .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
+    .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
+    
+    @media (max-width: 600px) {
+        .c-cell { height: 110px; }
+        .c-day { font-size: 0.9em; }
+        .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -236,7 +231,7 @@ with st.sidebar:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         
         with st.expander("📂 Seleccionar Base", expanded=True):
-            base_sel = st.radio("Bases:", list(base_opts.keys()), label_visibility="collapsed")
+            base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
         
         if base_sel:
             st.session_state['base_activa_id'] = base_opts[base_sel]
@@ -246,7 +241,7 @@ with st.sidebar:
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
                 with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
-                    tabla_sel = st.radio("Tablas:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
+                    tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
                 if st.button("🔄 CARGAR DATOS", type="primary"):
                     with st.spinner("Conectando..."):
@@ -275,8 +270,7 @@ if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    AZUL = RGBColor(0, 176, 240)
-
+    
     # --------------------------------------------------------
     # MÓDULO POSTALES
     # --------------------------------------------------------
@@ -354,7 +348,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confechor>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -444,7 +438,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -517,27 +511,12 @@ else:
                 text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333; background-color: #fff;
             }
             .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
-            .c-head { 
-                background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px;
-            }
-            .c-cell { 
-                background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; 
-                display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
-            }
-            .c-day { 
-                flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0;
-            }
-            .c-body { 
-                flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8;
-            }
-            /* FOOTER OBLIGATORIO: Altura fija y color siempre */
-            .c-foot { 
-                flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden;
-            }
-            /* FOOTER VACIO (Para 0 eventos) */
-            .c-foot-empty { 
-                flex: 0 0 auto; height: 20px; background: #e0e0e0; /* Gris */
-            }
+            .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+            .c-cell { background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+            .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+            .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
+            .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+            .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
             
             @media (max-width: 600px) {
                 .c-cell { height: 110px; }
@@ -559,7 +538,9 @@ else:
                         acts = fechas_oc.get(k, [])
                         
                         h += f"<div class='c-cell'>"
-                        h += f"<div class='c-day'>{d}</div>" # HEADER
+                        
+                        # HEADER
+                        h += f"<div class='c-day'>{d}</div>"
                         
                         # BODY
                         style_bg = ""
