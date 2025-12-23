@@ -141,7 +141,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v127", layout="wide")
+st.set_page_config(page_title="Provident Pro v129", layout="wide")
 
 # 0. NAVEGACIÓN PERSISTENTE
 if 'active_module' not in st.session_state:
@@ -169,7 +169,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. ESTILOS CSS - ÚNICAMENTE CALENDARIO
-# Todo lo demás usa los estilos por defecto de Streamlit (Botones naranjas, fondos default, etc)
 st.markdown("""
 <style>
     /* CALENDARIO PERSONALIZADO (AZUL CORPORATIVO) */
@@ -197,13 +196,13 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v127")
+st.title("🚀 Generador Pro v129")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("1. Conexión")
+    st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -238,9 +237,8 @@ with st.sidebar:
     
     # --- MENÚ DE NAVEGACIÓN ---
     if 'raw_records' in st.session_state:
-        st.header("⚡ Generar")
+        st.subheader("⚡ Generar")
         
-        # Botones Nativos: Primary (Naranja) si activo, Secondary (Gris) si inactivo
         t_pos = "primary" if st.session_state.active_module == "Postales" else "secondary"
         if st.button("📮 Postales", type=t_pos, use_container_width=True):
             navegar_a("Postales"); st.rerun()
@@ -249,7 +247,7 @@ with st.sidebar:
         if st.button("📄 Reportes", type=t_rep, use_container_width=True):
             navegar_a("Reportes"); st.rerun()
             
-        st.header("📅 Eventos")
+        st.subheader("📅 Eventos")
         t_cal = "primary" if st.session_state.active_module == "Calendario" else "secondary"
         if st.button("📆 Calendario", type=t_cal, use_container_width=True):
             navegar_a("Calendario"); st.rerun()
@@ -276,14 +274,15 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        if 'sa_p' not in st.session_state: st.session_state.sa_p = False
-        c1,c2,_=st.columns([1,1,5])
-        if c1.button("✅ Todo"): st.session_state.sa_p=True; st.rerun()
-        if c2.button("❌ Nada"): st.session_state.sa_p=False; st.rerun()
-        df_view.insert(0,"Seleccionar",st.session_state.sa_p)
+        # 1. CHECKBOX MAESTRO
+        sel_all = st.checkbox("Seleccionar Todo", value=False, key="sel_all_postales")
         
+        # 2. INSERTAR COLUMNA "✅" (VISUALMENTE LIMPIO)
+        df_view.insert(0, "✅", sel_all)
+        
+        # 3. EDITOR DE DATOS
         df_edit = st.data_editor(df_view, hide_index=True)
-        sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
+        sel_idx = df_edit.index[df_edit["✅"]==True].tolist()
         
         if sel_idx:
             folder = os.path.join("Plantillas", "POSTALES")
@@ -297,7 +296,8 @@ else:
                 st.session_state.config["plantillas"][t] = cols[i].selectbox(f"Plantilla '{t}':", archs, index=idx, key=f"pp_{t}")
 
             if st.button("🔥 GENERAR POSTALES", type="primary"):
-                p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
+                p_bar = st.progress(0); 
+                archivos_generados = [] # LOCAL
                 TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, "<<Conhora>>":32, "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28, "<<Confecha>>":32}
                 
                 for i, idx in enumerate(sel_idx):
@@ -391,9 +391,16 @@ else:
                             imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True)
                             fbytes = b.getvalue()
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Postales/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs, "Tipo":ft})
+                        archivos_generados.append({"RutaZip":path, "Datos":fbytes})
                     p_bar.progress((i+1)/len(sel_idx))
-                st.success("Hecho")
+                
+                # BOTÓN DE DESCARGA INMEDIATO
+                if archivos_generados:
+                    zb = BytesIO()
+                    with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
+                        for f in archivos_generados: z.writestr(f["RutaZip"], f["Datos"])
+                    st.success("✅ Generación Completada")
+                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} POSTALES", zb.getvalue(), f"Postales_{datetime.now().strftime('%H%M%S')}.zip", "application/zip", type="primary")
 
     # --------------------------------------------------------
     # MÓDULO REPORTES
@@ -404,14 +411,15 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        if 'sa_r' not in st.session_state: st.session_state.sa_r = False
-        c1,c2,_=st.columns([1,1,5])
-        if c1.button("✅ Todo", key="r1"): st.session_state.sa_r=True; st.rerun()
-        if c2.button("❌ Nada", key="r2"): st.session_state.sa_r=False; st.rerun()
-        df_view.insert(0,"Seleccionar",st.session_state.sa_r)
+        # 1. CHECKBOX MAESTRO
+        sel_all_r = st.checkbox("Seleccionar Todo", value=False, key="sel_all_reportes")
         
+        # 2. INSERTAR COLUMNA "✅"
+        df_view.insert(0, "✅", sel_all_r)
+        
+        # 3. EDITOR
         df_edit = st.data_editor(df_view, hide_index=True, key="ed_r")
-        sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
+        sel_idx = df_edit.index[df_edit["✅"]==True].tolist()
         
         if sel_idx:
             folder = os.path.join("Plantillas", "REPORTES")
@@ -425,7 +433,8 @@ else:
                 st.session_state.config["plantillas"][t] = cols[i].selectbox(f"Plantilla '{t}':", archs, index=idx, key=f"pr_{t}")
 
             if st.button("🔥 CREAR REPORTES", type="primary"):
-                p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
+                p_bar = st.progress(0)
+                archivos_generados = [] # LOCAL
                 TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24, "<<Confechor>>":20, "<<Concat>>":12}
                 
                 for i, idx in enumerate(sel_idx):
@@ -516,9 +525,16 @@ else:
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Reportes/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs, "Tipo":ft})
+                        archivos_generados.append({"RutaZip":path, "Datos":dout})
                     p_bar.progress((i+1)/len(sel_idx))
-                st.success("Hecho")
+                
+                # BOTÓN DE DESCARGA INMEDIATO
+                if archivos_generados:
+                    zb = BytesIO()
+                    with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
+                        for f in archivos_generados: z.writestr(f["RutaZip"], f["Datos"])
+                    st.success("✅ Generación Completada")
+                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} REPORTES", zb.getvalue(), f"Reportes_{datetime.now().strftime('%H%M%S')}.zip", "application/zip", type="primary")
 
     # --------------------------------------------------------
     # MÓDULO CALENDARIO
@@ -631,25 +647,3 @@ else:
                         h += "</div>"
             h += "</div>"
             st.markdown(h, unsafe_allow_html=True)
-
-    # --- DESCARGAS ---
-    if modulo in ["Postales", "Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
-        st.divider()
-        c1,c2,_=st.columns([1,1,3])
-        if c1.button("☑️ Todo", key="dt"): 
-            for i in st.session_state.archivos_en_memoria: i["Seleccionar"]=True
-            st.rerun()
-        if c2.button("⬜ Nada", key="dn"): 
-            for i in st.session_state.archivos_en_memoria: i["Seleccionar"]=False
-            st.rerun()
-        
-        df_d = pd.DataFrame(st.session_state.archivos_en_memoria)
-        ed = st.data_editor(df_d[["Seleccionar", "Archivo", "Sucursal"]], hide_index=True)
-        idxs = ed[ed["Seleccionar"]==True].index.tolist()
-        fins = [st.session_state.archivos_en_memoria[i] for i in idxs]
-        
-        if len(fins)>0:
-            zb = BytesIO()
-            with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
-                for f in fins: z.writestr(f["RutaZip"], f["Datos"])
-            st.download_button(f"⬇️ DESCARGAR {len(fins)}", zb.getvalue(), f"Pack_{datetime.now().strftime('%H%M%S')}.zip", "application/zip", type="primary")
