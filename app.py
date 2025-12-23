@@ -140,14 +140,34 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v105", layout="wide")
+st.set_page_config(page_title="Provident Pro v106", layout="wide")
+
+# --- HACK JAVASCRIPT: BLOQUEAR TECLADO EN SELECTBOX ---
+# Esto busca todos los inputs de los selectbox y les pone inputmode='none'
+# haciendo que el celular no abra el teclado, pero sí despliegue la lista.
+st.markdown("""
+<script>
+    const observer = new MutationObserver((mutations) => {
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        inputs.forEach(input => {
+            // Streamlit usa inputs para los selectbox.
+            // Si el input está dentro de un contenedor de select, lo bloqueamos.
+            if (input.getAttribute('aria-autocomplete') === 'list') {
+                input.setAttribute('inputmode', 'none');
+                input.setAttribute('readonly', 'true');
+            }
+        });
+    });
+    observer.observe(window.parent.document.body, { childList: true, subtree: true });
+</script>
+""", unsafe_allow_html=True)
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v105 - Full Width")
+st.title("🚀 Generador Pro v106 - Mobile Touch")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -330,6 +350,7 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
+                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -431,8 +452,6 @@ else:
             st.markdown("""
             <style>
             .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-            
-            /* HEADER SEMANA */
             .c-head { 
                 background: #002060; /* Azul Oscuro */
                 color: white; 
@@ -441,7 +460,6 @@ else:
                 font-weight: bold; 
                 border-radius: 4px; 
             }
-            
             .c-cell { 
                 background: white; 
                 border: 1px solid #ccc; 
@@ -453,7 +471,7 @@ else:
                 overflow: hidden;
             }
             
-            /* HEADER DIA (NUMERO) */
+            /* HEADER: DIA (FONDO CELESTE, TEXTO BLANCO) */
             .c-day { 
                 flex: 0 0 auto;
                 background: #00b0f0; /* Celeste */
@@ -487,7 +505,7 @@ else:
             
             .c-noimg { font-size: 0.7em; color: #ccc; font-style: italic; }
             
-            /* FOOTER (+N) */
+            /* FOOTER: MAS (FONDO AZUL OSCURO, TEXTO BLANCO) */
             .c-foot { 
                 flex: 0 0 auto;
                 background: #002060; /* Azul Oscuro */
@@ -499,7 +517,7 @@ else:
             }
             
             @media (max-width: 600px) {
-                .c-cell { height: 110px; }
+                .c-cell { min-height: 100px; }
                 .c-day { font-size: 0.9em; }
                 .c-foot { font-size: 0.8em; }
             }
