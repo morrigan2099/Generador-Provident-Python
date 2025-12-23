@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v101", layout="wide")
+st.set_page_config(page_title="Provident Pro v102", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v101 - Final Clean")
+st.title("🚀 Generador Pro v102 - Fix Menu")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -184,6 +184,7 @@ with st.sidebar:
     modulo = None
     if 'raw_records' in st.session_state:
         st.header("2. Módulos")
+        # --- AQUÍ ESTABA EL ERROR: EL NOMBRE DEBE SER EXACTO ---
         modulo = st.radio("Ir a:", ["📮 Postales", "📄 Reportes", "📅 Calendario"], index=2)
         if st.button("💾 Guardar Config"):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
@@ -206,14 +207,12 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- TABLA DE DATOS (FIXED) ---
         if 'sa_p' not in st.session_state: st.session_state.sa_p = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo"): st.session_state.sa_p=True; st.rerun()
         if c2.button("❌ Nada"): st.session_state.sa_p=False; st.rerun()
         df_view.insert(0,"Seleccionar",st.session_state.sa_p)
         
-        # FIX: Eliminado use_container_width para evitar warnings
         df_edit = st.data_editor(df_view, hide_index=True)
         sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
         
@@ -297,14 +296,12 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- TABLA DE DATOS (FIXED) ---
         if 'sa_r' not in st.session_state: st.session_state.sa_r = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo", key="r1"): st.session_state.sa_r=True; st.rerun()
         if c2.button("❌ Nada", key="r2"): st.session_state.sa_r=False; st.rerun()
         df_view.insert(0,"Seleccionar",st.session_state.sa_r)
         
-        # FIX: Eliminado use_container_width
         df_edit = st.data_editor(df_view, hide_index=True, key="ed_r")
         sel_idx = df_edit.index[df_edit["Seleccionar"]==True].tolist()
         
@@ -379,9 +376,9 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (NATIVO STREAMLIT)
+    # MÓDULO CALENDARIO (CORREGIDO: NOMBRE DE OPCIÓN)
     # --------------------------------------------------------
-    elif modulo == "📅 Calendario Visual":
+    elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
         
         # 1. Selector de Tabla
@@ -434,7 +431,7 @@ else:
             ay, am = mc.most_common(1)[0][0]
             st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
 
-            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS - GARANTIZADO)
+            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS)
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
@@ -450,22 +447,19 @@ else:
                     for i, day in enumerate(week):
                         with cols[i]:
                             if day != 0:
-                                # Header: Día
-                                st.markdown(f"**{day}**") 
+                                st.markdown(f"**{day}**") # HEADER
                                 
                                 k = f"{ay}-{str(am).zfill(2)}-{str(day).zfill(2)}"
                                 acts = fechas_oc.get(k, [])
                                 
                                 if acts:
-                                    # Body: Imagen
                                     if acts[0]['thumb']:
-                                        st.image(acts[0]['thumb'], use_container_width=True)
+                                        st.image(acts[0]['thumb'], use_container_width=True) # BODY
                                     else:
                                         st.caption("Sin postal")
                                     
-                                    # Footer: Mas
                                     if len(acts) > 1:
-                                        st.error(f"+ {len(acts)-1} más")
+                                        st.error(f"+ {len(acts)-1} más") # FOOTER
                                 else:
                                     st.write("") 
                             else:
@@ -484,7 +478,6 @@ else:
             st.rerun()
         
         df_d = pd.DataFrame(st.session_state.archivos_en_memoria)
-        # FIX: Eliminado use_container_width
         ed = st.data_editor(df_d[["Seleccionar", "Archivo", "Sucursal"]], hide_index=True)
         idxs = ed[ed["Seleccionar"]==True].index.tolist()
         fins = [st.session_state.archivos_en_memoria[i] for i in idxs]
