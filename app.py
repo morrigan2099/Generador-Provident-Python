@@ -21,7 +21,7 @@ from PIL import Image, ImageOps, ImageFilter
 from collections import Counter
 
 # ============================================================
-#  CONFIGURACIÓN GLOBAL Y WHATSAPP
+#  CONFIGURACIÓN GLOBAL
 # ============================================================
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -38,7 +38,7 @@ WHATSAPP_GROUPS = {
 }
 
 # ============================================================
-#  FUNCIONES TÉCNICAS (IMAGEN, TEXTO Y PDF)
+#  FUNCIONES TÉCNICAS (LOGICA DE NEGOCIO)
 # ============================================================
 
 def recorte_inteligente_bordes(img):
@@ -75,7 +75,6 @@ def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=Fal
 def procesar_texto_maestro(texto, campo=""):
     if not texto or str(texto).lower() == "none": return ""
     t = str(texto).replace('/', ' ').strip().replace('\n', ' ').replace('\r', ' ')
-    if campo == 'Seccion': return t.upper()
     palabras = t.lower().split()
     resultado = [p.capitalize() if i == 0 or p not in ['de', 'la', 'el', 'en', 'y', 'a', 'con', 'las', 'los', 'del', 'al'] else p for i, p in enumerate(palabras)]
     return " ".join(resultado)
@@ -112,52 +111,35 @@ def obtener_concat_texto(record):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v150", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Provident Pro v151", layout="wide", initial_sidebar_state="expanded")
 
-# CSS PARA FORZAR ANCHO MÓVIL Y BOTONES
+# CSS PARA FORZAR SIDEBAR Y CALENDARIO TABULAR
 st.markdown("""
 <style>
-    header[data-testid="stHeader"] { visibility: hidden; height: 0; }
-    .block-container { padding-top: 85px !important; padding-left: 5px !important; padding-right: 5px !important; }
+    /* FORZAR SIDEBAR VISIBLE EN MÓVIL */
+    section[data-testid="stSidebar"] {
+        display: block !important;
+        width: 250px !important;
+        position: relative !important;
+        z-index: 999;
+    }
     
-    /* LIMITAR ANCHO DEL CALENDARIO PARA QUE NO SE SALGA */
-    [data-testid="stHorizontalBlock"] {
-        max-width: 360px !important;
-        margin: 0 auto !important;
-        gap: 0px !important;
-        display: flex !important;
-        flex-wrap: nowrap !important;
-    }
-    [data-testid="column"] { min-width: 0px !important; flex: 1 1 0% !important; padding: 1px !important; }
+    header[data-testid="stHeader"] { visibility: hidden; height: 0; }
+    .block-container { padding-top: 20px !important; }
 
-    /* CELDA DEL CALENDARIO */
-    .cell-wrapper {
-        position: relative;
-        width: 100%;
-        height: 85px;
-        border: 0.5px solid #ccc;
-        background: white;
-        overflow: hidden;
+    /* TABLA DE CALENDARIO REAL (No se rompe en móvil) */
+    .cal-table-fixed { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .cal-table-fixed th { background: #002060; color: white; font-size: 11px; padding: 5px 0; text-align: center; }
+    .cal-table-fixed td { 
+        height: 80px; border: 1px solid #ddd; position: relative; padding: 0; vertical-align: top;
+        background-color: white;
     }
-    .c-day-num { background: #00b0f0; color: white; font-weight: bold; font-size: 0.75em; text-align: center; height: 16px; line-height: 16px; }
-    .c-img-body { height: 55px; background-size: cover; background-position: center; }
-    .c-foot-label { height: 14px; background: #002060; color: white; text-align: center; font-size: 7px; line-height: 14px; }
-
-    /* BOTÓN INVISIBLE QUE CUBRE LA CELDA */
-    .cell-wrapper div[data-testid="stButton"] {
-        position: absolute !important; top: 0 !important; left: 0 !important;
-        width: 100% !important; height: 100% !important; z-index: 5;
-    }
-    .cell-wrapper button {
-        width: 100% !important; height: 100% !important;
-        background-color: transparent !important; border: none !important; color: transparent !important;
-    }
-
-    /* ESTILO TABLA NAV */
-    .table-nav { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
-    .nav-title b { color: #002060; font-size: 1.1em; display: block; text-transform: uppercase; }
-    .nav-title span { color: #333; font-size: 0.9em; display: block; }
-    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; }
+    .td-num { background: #00b0f0; color: white; font-size: 10px; font-weight: bold; text-align: center; height: 16px; }
+    .td-img { height: 50px; background-size: cover; background-position: center; width: 100%; }
+    .td-link { position: absolute; top:0; left:0; width:100%; height:100%; text-decoration: none !important; color: transparent !important; z-index: 10; }
+    
+    /* NAV DETALLE */
+    .nav-box { display: flex; align-items: center; justify-content: space-between; background: white; padding: 10px; margin-bottom: 10px; border-bottom: 2px solid #00b0f0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -168,9 +150,8 @@ if 'idx_postal' not in st.session_state: st.session_state.idx_postal = 0
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# SIDEBAR (CARGA AUTOMÁTICA Y CONEXIÓN)
 with st.sidebar:
-    st.header("🔗 Conexión")
+    st.title("PROVIDENT")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -189,45 +170,119 @@ with st.sidebar:
                     st.rerun()
     st.divider()
     if 'raw_records' in st.session_state:
-        if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.session_state.dia_seleccionado = None; st.rerun()
-        if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.session_state.dia_seleccionado = None; st.rerun()
-        if st.button("📆 Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.session_state.dia_seleccionado = None; st.rerun()
+        if st.button("📆 Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.rerun()
+        if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
+        if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
 
-# --- MAIN ---
+# --- MODULO MAIN ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Conecta una base en el sidebar.")
+    st.info("👈 Selecciona una base en el menú lateral.")
 else:
     mod = st.session_state.active_module
-    AZUL_PRO = RGBColor(0, 176, 240)
 
-    # LÓGICA DE POSTALES Y REPORTES (INTEGRA)
-    if mod in ["Postales", "Reportes"]:
-        st.subheader(f"📮 Generador de {mod}")
+    if mod == "Calendario":
+        fechas_oc = {}
+        for r in st.session_state.raw_data_original:
+            f = r['fields'].get('Fecha')
+            if f:
+                fk = f.split('T')[0]
+                if fk not in fechas_oc: fechas_oc[fk] = []
+                th = r['fields'].get('Postal', [{}])[0].get('url')
+                fechas_oc[fk].append({"thumb": th, "raw": r['fields']})
+
+        # DETALLE DEL DÍA
+        params = st.query_params
+        if "day" in params:
+            st.session_state.dia_seleccionado = params["day"]
+        
+        if st.session_state.dia_seleccionado:
+            k = st.session_state.dia_seleccionado
+            evs = sorted(fechas_oc[k], key=lambda x: x['raw'].get('Hora',''))
+            curr = st.session_state.idx_postal % len(evs)
+            evt = evs[curr]
+            dt = datetime.strptime(k, '%Y-%m-%d')
+            mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
+
+            # CABECERA PAGINADA
+            st.markdown(f"""
+            <div class="nav-box">
+                <a href="?day={k}&nav=prev" target="_self" style="background:#00b0f0; color:white; padding:8px; border-radius:50%; text-decoration:none;">←</a>
+                <div style="text-align:center;"><b>{mes_n}</b><br>{dia_n}</div>
+                <a href="?day={k}&nav=next" target="_self" style="background:#00b0f0; color:white; padding:8px; border-radius:50%; text-decoration:none;">→</a>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if "nav" in params:
+                if params["nav"] == "next": st.session_state.idx_postal += 1
+                else: st.session_state.idx_postal -= 1
+                st.query_params.clear(); st.query_params["day"] = k; st.rerun()
+
+            if st.button("🔙 VOLVER AL MES", use_container_width=True):
+                st.session_state.dia_seleccionado = None
+                st.query_params.clear(); st.rerun()
+
+            st.image(evt['thumb'], use_container_width=True)
+            f = evt['raw']
+            suc, tip, hor = f.get('Sucursal',''), f.get('Tipo',''), obtener_hora_texto(f.get('Hora',''))
+            ubi = obtener_concat_texto(f)
+            st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}** | **⏰ {hor}**\n\n**📍 {ubi}**")
+            
+            # WHATSAPP
+            sk = str(suc).lower().strip()
+            gp = WHATSAPP_GROUPS.get(sk, {"link":"", "name":"N/A"})
+            msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
+            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
+            if gp['link']: st.components.v1.html(jwa, height=80)
+
+        else:
+            # CALENDARIO TABULAR
+            dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
+            st.markdown(f"<div style='background:#002060; color:white; padding:10px; text-align:center; font-weight:bold; border-radius:8px;'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
+            
+            cal_html = '<table class="cal-table-fixed"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
+            weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
+            for week in weeks:
+                cal_html += '<tr>'
+                for d in week:
+                    if d == 0: cal_html += '<td></td>'
+                    else:
+                        k = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(d).zfill(2)}"
+                        evs = fechas_oc.get(k, [])
+                        bg = f"background-image: url('{evs[0]['thumb']}');" if evs and evs[0]['thumb'] else ""
+                        foot = f"+{len(evs)-1}" if len(evs)>1 else ""
+                        link = f'<a href="?day={k}" target="_self" class="td-link">.</a>' if evs else ""
+                        cal_html += f'<td><div class="td-num">{d}</div><div class="td-img" style="{bg}"></div><div style="font-size:7px; text-align:center; background:#002060; color:white;">{foot}</div>{link}</td>'
+                cal_html += '</tr>'
+            cal_html += '</table>'
+            st.markdown(cal_html, unsafe_allow_html=True)
+
+    elif mod in ["Postales", "Reportes"]:
+        st.subheader(f"Generador de {mod}")
         df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
         for c in df.columns:
             if isinstance(df[c].iloc[0], list): df.drop(c, axis=1, inplace=True)
         sel_all = st.checkbox("Seleccionar Todo")
         df.insert(0, "✅", sel_all)
         df_edit = st.data_editor(df, hide_index=True)
-        idx_list = df_edit.index[df_edit["✅"]==True].tolist()
+        idx = df_edit.index[df_edit["✅"]==True].tolist()
         
-        if idx_list:
+        if idx:
             f_tpl = f"Plantillas/{mod.upper()}"
-            if not os.path.exists(f_tpl): os.makedirs(f_tpl)
             archs = [f for f in os.listdir(f_tpl) if f.endswith('.pptx')]
-            tipos = df.loc[idx_list, "Tipo"].unique()
+            tipos = df.loc[idx, "Tipo"].unique()
             if 'config' not in st.session_state: st.session_state.config = {"plantillas": {}}
             for t in tipos:
                 st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archs, key=f"p_{t}")
 
-            if st.button("🚀 GENERAR PACK"):
+            if st.button("🚀 GENERAR"):
                 p_bar = st.progress(0); zip_data = []
-                for i, ix in enumerate(idx_list):
+                for i, ix in enumerate(idx):
                     rec, orig = st.session_state.raw_records[ix]['fields'], st.session_state.raw_data_original[ix]['fields']
                     dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d')
-                    ft, fs, mes_n = rec.get('Tipo', 'Sin Tipo'), rec.get('Sucursal', '000'), MESES_ES[dt.month-1]
-                    fcf = f"{mes_n.capitalize()} {dt.day} de {dt.year}\n{obtener_hora_texto(rec.get('Hora',''))}"
+                    ft, fs, mn = rec.get('Tipo',''), rec.get('Sucursal',''), MESES_ES[dt.month-1]
+                    fcf = f"{mn.capitalize()} {dt.day} de {dt.year}\n{obtener_hora_texto(rec.get('Hora',''))}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
+                    
                     try:
                         prs = Presentation(f"{f_tpl}/{st.session_state.config['plantillas'][ft]}")
                         for slide in prs.slides:
@@ -245,89 +300,21 @@ else:
                                         if t_k in shp.text_frame.text:
                                             tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
                                             tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-                                            run = p.add_run(); run.text=str(v); run.font.bold=True; run.font.color.rgb=AZUL_PRO; run.font.size=Pt(28 if t_k=="<<Confechor>>" else 24)
+                                            run = p.add_run(); run.text=str(v); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240); run.font.size=Pt(28 if t_k=="<<Confechor>>" else 24)
                         buf = BytesIO(); prs.save(buf)
-                        pdf = generar_pdf(buf.getvalue())
-                        if pdf:
-                            path = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {mes_n.capitalize()}/{mod}/{fs}/"
-                            name = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day}_{ft}_{fs}")[:120]
+                        dout = generar_pdf(buf.getvalue())
+                        if dout:
+                            path = f"Provident/{dt.year}/{str(dt.month).zfill(2)} - {mn.capitalize()}/{mod}/{fs}/"
+                            name = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {mn} de {dt.year} - {ft}, {fs} - {fcc}")[:120]
                             if mod == "Postales":
-                                img_b = convert_from_bytes(pdf, dpi=170)[0]
+                                img_b = convert_from_bytes(dout, dpi=170)[0]
                                 with BytesIO() as b:
                                     img_b.save(b, format="JPEG", quality=85); zip_data.append({"n": f"{path}{name}.jpg", "d": b.getvalue()})
-                            else: zip_data.append({"n": f"{path}{name}.pdf", "d": pdf})
+                            else: zip_data.append({"n": f"{path}{name}.pdf", "d": dout})
                     except: pass
-                    p_bar.progress((i+1)/len(idx_list))
+                    p_bar.progress((i+1)/len(idx))
                 if zip_data:
                     z_buf = BytesIO()
                     with zipfile.ZipFile(z_buf, "w") as z:
                         for f in zip_data: z.writestr(f["n"], f["d"])
-                    st.download_button("⬇️ DESCARGAR ZIP", z_buf.getvalue(), "Provident_Pack.zip", "application/zip")
-
-    # MÓDULO CALENDARIO (RESTRINGIDO)
-    elif mod == "Calendario":
-        fechas_oc = {}
-        for r in st.session_state.raw_data_original:
-            f = r['fields'].get('Fecha')
-            if f:
-                fk = f.split('T')[0]
-                if fk not in fechas_oc: fechas_oc[fk] = []
-                th = r['fields'].get('Postal', [{}])[0].get('url')
-                fechas_oc[fk].append({"thumb": th, "raw_fields": r['fields']})
-
-        if st.session_state.dia_seleccionado:
-            k = st.session_state.dia_seleccionado
-            evs = sorted(fechas_oc[k], key=lambda x: x['raw_fields'].get('Hora', ''))
-            curr = st.session_state.idx_postal % len(evs)
-            evt = evs[curr]
-            dt = datetime.strptime(k, '%Y-%m-%d')
-            mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
-
-            st.markdown(f"""
-            <table class="table-nav">
-                <tr>
-                    <td style="width:45px;"><a href="?nav=prev" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">←</a></td>
-                    <td style="text-align:center;"><div class="nav-title"><b>{mes_n}</b><span>{dia_n}</span></div></td>
-                    <td style="width:45px;"><a href="?nav=next" target="_self" style="background:#00b0f0;color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:bold;">→</a></td>
-                </tr>
-            </table>
-            """, unsafe_allow_html=True)
-            
-            qp = st.query_params
-            if qp.get("nav") == "next": st.session_state.idx_postal += 1; st.query_params.clear(); st.rerun()
-            if qp.get("nav") == "prev": st.session_state.idx_postal -= 1; st.query_params.clear(); st.rerun()
-
-            if st.button("🔙 VOLVER AL CALENDARIO", key="btn_volver"): st.session_state.dia_seleccionado = None; st.rerun()
-            if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
-            f_f = evt['raw_fields']
-            suc, tip, hor = f_f.get('Sucursal',''), f_f.get('Tipo',''), obtener_hora_texto(f_f.get('Hora',''))
-            ubi = obtener_concat_texto(f_f)
-            st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}** | **⏰ {hor}**\n\n**📍 {ubi}**")
-            gp = WHATSAPP_GROUPS.get(str(suc).lower().strip(), {"link": "", "name": "N/A"})
-            msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
-            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
-            if gp['link']: st.components.v1.html(jwa, height=80)
-        else:
-            if fechas_oc:
-                dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
-                st.markdown(f"<div style='background:linear-gradient(135deg,#002060,#00b0f0);padding:10px;border-radius:8px;margin-bottom:10px;text-align:center;color:white;font-weight:bold;text-transform:uppercase;'>{MESES_ES[dt_ref.month-1]} {dt_ref.year}</div>", unsafe_allow_html=True)
-                cols_h = st.columns(7)
-                for i, d in enumerate(["L","M","X","J","V","S","D"]): cols_h[i].markdown(f"<div style='background:#002060;color:white;text-align:center;font-size:10px;font-weight:bold;padding:2px;'>{d}</div>", unsafe_allow_html=True)
-                weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
-                for week in weeks:
-                    cols = st.columns(7)
-                    for i, d in enumerate(week):
-                        with cols[i]:
-                            if d > 0:
-                                k = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(d).zfill(2)}"
-                                evs = fechas_oc.get(k, [])
-                                bg = f"background-image: url('{evs[0]['thumb']}');" if evs and evs[0]['thumb'] else ""
-                                st.markdown(f"""
-                                <div class="cell-wrapper">
-                                    <div class="c-day-num">{d}</div>
-                                    <div class="c-img-body" style="{bg}"></div>
-                                    <div class="c-foot-label">{f'+{len(evs)-1}' if len(evs)>1 else ''}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                if evs:
-                                    if st.button(" ", key=f"day_{k}"): st.session_state.dia_seleccionado=k; st.session_state.idx_postal=0; st.rerun()
+                    st.download_button("⬇️ DESCARGAR PACK", z_buf.getvalue(), "Provident.zip", "application/zip")
