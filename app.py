@@ -140,7 +140,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v112", layout="wide")
+st.set_page_config(page_title="Provident Pro v113", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -158,53 +158,95 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS PERSONALIZADOS (COLORES SOLICITADOS)
+# 2. ESTILOS CSS AGRESIVOS (ANTI MODO OSCURO + COLORES FIJOS)
 st.markdown("""
 <style>
-    /* FORZAR TEMA CLARO GLOBAL */
-    [data-testid="stAppViewContainer"] {
+    /* 1. FORZAR MODO CLARO EN EL NAVEGADOR */
+    :root {
+        color-scheme: light;
+    }
+    
+    /* 2. CONTENEDORES PRINCIPALES */
+    [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
         background-color: #ffffff !important;
         color: #000000 !important;
     }
-    [data-testid="stSidebar"] {
-        background-color: #f8f9fa !important;
+    
+    /* 3. TEXTOS GENERALES (Asegurar negro sobre blanco) */
+    p, label, span, div, h1, h2, h3, h4, h5, h6, li {
+        color: #000000 !important;
     }
     
-    /* BOTONES (Azul Oscuro Fondo, Blanco Texto) */
+    /* 4. SIDEBAR ESPECÍFICO */
+    [data-testid="stSidebar"] {
+        background-color: #f8f9fa !important;
+        border-right: 1px solid #ddd;
+    }
+    
+    /* 5. BOTONES (Azul Oscuro / Blanco) */
     div.stButton > button {
         background-color: #002060 !important;
         color: #ffffff !important;
-        font-weight: bold;
         border: none;
+        border-radius: 4px;
+        font-weight: bold;
     }
     div.stButton > button:hover {
-        background-color: #00b0f0 !important; /* Celeste Hover */
+        background-color: #00b0f0 !important; /* Celeste al pasar mouse */
+        color: #ffffff !important;
+    }
+    div.stButton > button p {
+        color: #ffffff !important; /* Texto interno del botón blanco */
     }
     
-    /* RADIO BUTTONS (Selección Celeste) */
-    div[role="radiogroup"] label {
+    /* 6. RADIO BUTTONS (Eliminar Naranja, Poner Celeste) */
+    /* Texto de las opciones */
+    div[role="radiogroup"] label p {
         color: #000000 !important;
     }
+    /* Círculo seleccionado */
     div[role="radiogroup"] div[data-checked="true"] {
-        background-color: #00b0f0 !important;
+        background-color: #00b0f0 !important; /* Relleno Celeste */
         border-color: #00b0f0 !important;
     }
+    /* Círculo externo del seleccionado (a veces Streamlit usa dos divs) */
+    div[role="radiogroup"] div[data-checked="true"] > div {
+        background-color: #00b0f0 !important;
+    }
     
-    /* ENCABEZADOS DE TABLA (Celeste Fondo, Blanco Texto) */
+    /* 7. EXPANDERS */
+    .streamlit-expanderHeader {
+        background-color: #ffffff !important;
+        color: #002060 !important; /* Título azul oscuro */
+        font-weight: bold;
+    }
+    .streamlit-expanderHeader p {
+        color: #002060 !important;
+    }
+    
+    /* 8. TABLAS (Headers Celestes) */
     [data-testid="stDataFrameResizable"] th {
         background-color: #00b0f0 !important;
         color: #ffffff !important;
     }
+    [data-testid="stDataFrameResizable"] th div {
+        color: #ffffff !important;
+    }
     
-    /* CALENDARIO ESTILOS (Mantenemos tu formato) */
-    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0; padding-bottom: 10px; color: #333; }
+    /* 9. EXCEPCIONES PARA EL CALENDARIO (Para que el CSS interno funcione) */
+    .c-head, .c-day, .c-foot, .c-foot-empty {
+        color: #ffffff !important; /* Texto blanco forzado en componentes oscuros */
+    }
+    
+    /* ESTILOS DEL CALENDARIO (Pegados aquí para referencia global) */
+    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff; }
     .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
-    .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-    .c-cell { background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-    .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
-    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
-    .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
-    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
+    .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+    .c-cell { background: white !important; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+    .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
+    .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
     
     @media (max-width: 600px) {
         .c-cell { height: 110px; }
@@ -219,7 +261,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v112")
+st.title("🚀 Generador Pro v113")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -348,7 +390,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confechor>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -438,7 +480,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -505,27 +547,6 @@ else:
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            st.markdown("""
-            <style>
-            .cal-title {
-                text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333; background-color: #fff;
-            }
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
-            .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-            .c-cell { background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-            .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
-            .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
-            .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
-            .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
-            
-            @media (max-width: 600px) {
-                .c-cell { height: 110px; }
-                .c-day { font-size: 0.9em; }
-                .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; }
-            }
-            </style>
-            """, unsafe_allow_html=True)
-
             h = f"<div class='cal-title'>📅 {MESES_ES[am-1].capitalize()} {ay}</div>"
             h += "<div class='c-grid'>"
             for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
@@ -552,7 +573,7 @@ else:
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
-                            h += f"<div class='c-foot'>&nbsp;</div>" # Azul pero sin texto
+                            h += f"<div class='c-foot'>&nbsp;</div>" # Azul sin texto
                         else:
                             h += f"<div class='c-foot-empty'></div>" # Gris vacío
                         
