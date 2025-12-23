@@ -126,13 +126,15 @@ def obtener_hora_texto(hora_str):
 
 def obtener_concat_texto(record):
     parts = []
-    v_pt = record.get('Punto de reunion')
+    # CORRECCIÓN: Asignar variables correctamente antes de verificar
+    val_punto = record.get('Punto de reunion')
+    val_ruta = record.get('Ruta a seguir')
+    val_mun = record.get('Municipio')
+    val_sec = record.get('Seccion')
+
     if val_punto and str(val_punto).lower() != 'none': parts.append(str(val_punto))
-    v_rt = record.get('Ruta a seguir')
     if val_ruta and str(val_ruta).lower() != 'none': parts.append(str(val_ruta))
-    v_mun = record.get('Municipio')
     if val_mun and str(val_mun).lower() != 'none': parts.append(f"Municipio {val_mun}")
-    v_sec = record.get('Seccion')
     if val_sec and str(val_sec).lower() != 'none': parts.append(f"Sección {str(val_sec).upper()}")
     return ", ".join(parts)
 
@@ -140,9 +142,9 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v118", layout="wide")
+st.set_page_config(page_title="Provident Pro v119", layout="wide")
 
-# 1. BLOQUEO TECLADO (JS) - Útil y no afecta el diseño
+# 1. BLOQUEO TECLADO (JS)
 st.markdown("""
 <script>
     const observer = new MutationObserver((mutations) => {
@@ -158,89 +160,19 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS - SOLO CALENDARIO (Todo lo demás será nativo de Streamlit)
+# 2. ESTILOS CSS - SOLO CALENDARIO
 st.markdown("""
 <style>
-    /* CALENDARIO ESTILOS */
-    /* Estos estilos solo afectan a la tabla HTML creada manualmente */
-    /* Se usa !important para asegurar que estos colores prevalezcan sobre cualquier tema */
-    
     .cal-title {
-        text-align: center;
-        font-size: 1.5em;
-        font-weight: bold;
-        margin: 0 !important;
-        padding-bottom: 10px;
-        color: #333 !important; /* Título siempre gris oscuro */
-        background-color: #fff !important; /* Fondo título blanco */
-        border-radius: 4px;
+        text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
     }
-    
-    .c-grid { 
-        display: grid; 
-        grid-template-columns: repeat(7, 1fr); 
-        gap: 2px; 
-        margin-top: 0px !important; 
-    }
-    
-    .c-head { 
-        background: #002060 !important; /* Azul Oscuro */
-        color: white !important; 
-        padding: 4px; 
-        text-align: center; 
-        font-weight: bold; 
-        border-radius: 2px; 
-        font-size: 14px; 
-    }
-    
-    .c-cell { 
-        background: white !important; 
-        border: 1px solid #ccc !important; 
-        border-radius: 2px; 
-        height: 160px; 
-        display: flex; 
-        flex-direction: column; 
-        justify-content: space-between; 
-        overflow: hidden; 
-    }
-    
-    .c-day { 
-        flex: 0 0 auto; 
-        background: #00b0f0 !important; /* Celeste */
-        color: white !important; 
-        font-weight: 900; 
-        font-size: 1.1em; 
-        text-align: center; 
-        padding: 2px 0; 
-    }
-    
-    .c-body { 
-        flex-grow: 1; 
-        width: 100%; 
-        background-position: center; 
-        background-repeat: no-repeat; 
-        background-size: cover; 
-        background-color: #f8f8f8 !important; 
-    }
-    
-    .c-foot { 
-        flex: 0 0 auto; 
-        height: 20px; 
-        background: #002060 !important; /* Azul Oscuro */
-        color: #ffffff !important; 
-        font-weight: 900; 
-        text-align: center; 
-        font-size: 0.9em; 
-        padding: 1px; 
-        white-space: nowrap; 
-        overflow: hidden; 
-    }
-    
-    .c-foot-empty { 
-        flex: 0 0 auto; 
-        height: 20px; 
-        background: #e0e0e0 !important; /* Gris */
-    }
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
+    .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+    .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+    .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
+    .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
     
     @media (max-width: 600px) {
         .c-cell { height: 110px; }
@@ -255,7 +187,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v118")
+st.title("🚀 Generador Pro v119")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -266,7 +198,6 @@ with st.sidebar:
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         
-        # Uso nativo pero encapsulado en expander para limpieza visual
         with st.expander("📂 Seleccionar Base", expanded=True):
             base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
         
@@ -307,7 +238,8 @@ if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
+    AZUL = RGBColor(0, 176, 240)
+
     # --------------------------------------------------------
     # MÓDULO POSTALES
     # --------------------------------------------------------
@@ -385,7 +317,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confechor>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -475,7 +407,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -549,7 +481,7 @@ else:
             }
             .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
             .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-            .c-cell { background: white !important; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+            .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
             .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
             .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
             .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
