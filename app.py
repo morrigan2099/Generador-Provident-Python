@@ -101,7 +101,6 @@ def generar_pdf(pptx_bytes):
 
 # --- LÓGICA DE DATOS ---
 def obtener_fecha_texto(fecha_dt):
-    # Formato completo con día de la semana para reportes o usos generales
     dia_idx = fecha_dt.weekday()
     return f"{DIAS_ES[dia_idx]} {fecha_dt.day} de {MESES_ES[fecha_dt.month - 1]} de {fecha_dt.year}"
 
@@ -142,7 +141,21 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v125", layout="wide")
+st.set_page_config(page_title="Provident Pro v126", layout="wide")
+
+# 0. GESTIÓN DE NAVEGACIÓN PERSISTENTE (Query Params)
+# Recuperar vista de URL o usar default
+if 'active_module' not in st.session_state:
+    # Intenta leer de la URL
+    qp = st.query_params.get("view", "Calendario") 
+    st.session_state.active_module = qp
+
+# Función para navegar y actualizar URL
+def navegar_a(modulo):
+    st.session_state.active_module = modulo
+    st.query_params["view"] = modulo
+    # No es necesario st.rerun() porque el botón ya gatilla el rerun, 
+    # pero aseguramos que la variable se guarde.
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -160,12 +173,71 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS - SOLO CALENDARIO (Todo lo demás nativo)
+# 2. ESTILOS CSS (TEMA CLARO + BOTONES NAV)
 st.markdown("""
 <style>
-    .cal-title {
-        text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
+    /* TEMA CLARO GLOBAL */
+    :root { color-scheme: light; }
+    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
+    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
+    
+    /* Textos Generales */
+    p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
+
+    /* BOTONES DE NAVEGACIÓN (Primario = Activo, Secundario = Inactivo) */
+    
+    /* Botón Activo (Primary) -> Celeste */
+    div.stButton > button[kind="primary"] {
+        background-color: #00b0f0 !important; /* CELESTE */
+        color: #ffffff !important;
+        font-weight: bold;
+        border: none;
     }
+    
+    /* Botón Inactivo (Secondary) -> Azul Oscuro */
+    div.stButton > button[kind="secondary"] {
+        background-color: #002060 !important; /* AZUL OSCURO */
+        color: #ffffff !important;
+        font-weight: bold;
+        border: none;
+    }
+    
+    /* Hover para todos */
+    div.stButton > button:hover {
+        opacity: 0.9;
+    }
+    
+    /* Texto interno de botones */
+    div.stButton > button p { color: #ffffff !important; }
+
+    /* EXPANDERS */
+    .streamlit-expanderHeader {
+        background-color: #262730 !important; 
+        color: #ffffff !important; 
+        font-weight: bold !important;
+        border-radius: 4px;
+        margin-bottom: 5px;
+    }
+    .streamlit-expanderHeader p, .streamlit-expanderHeader svg { color: #ffffff !important; fill: #ffffff !important; }
+    .streamlit-expanderContent {
+        background-color: #ffffff !important; 
+        color: #000000 !important;
+        border: 1px solid #ddd;
+        border-radius: 0 0 4px 4px;
+        padding: 10px;
+    }
+    .streamlit-expanderContent label p { color: #000000 !important; }
+    
+    /* RADIO BUTTONS */
+    div[role="radiogroup"] div[role="radio"] > div:first-child { border-color: #00b0f0 !important; background-color: transparent !important; }
+    div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child { background-color: #00b0f0 !important; border-color: #00b0f0 !important; }
+    
+    /* TABLAS */
+    [data-testid="stDataFrameResizable"] th { background-color: #00b0f0 !important; color: #ffffff !important; }
+    [data-testid="stDataFrameResizable"] th div { color: #ffffff !important; }
+
+    /* CALENDARIO */
+    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff; }
     .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
     .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
     .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
@@ -187,13 +259,13 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v125")
+st.title("🚀 Generador Pro v126")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("1. Conexión")
+    st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -209,10 +281,9 @@ with st.sidebar:
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
                 with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
-                    # CARGA AUTOMATICA: Detectar cambio
                     tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
-                # Lógica de Carga Automática
+                # LOGICA DE CARGA AUTOMATICA
                 if 'tabla_actual_nombre' not in st.session_state or st.session_state['tabla_actual_nombre'] != tabla_sel:
                     with st.spinner("Cargando datos automáticamente..."):
                         r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
@@ -228,36 +299,31 @@ with st.sidebar:
 
     st.divider()
     
-    # --- MENÚS SEPARADOS (GENERAR vs EVENTOS) ---
-    modulo = None
+    # --- MENÚ DE NAVEGACIÓN POR BOTONES ---
     if 'raw_records' in st.session_state:
-        st.header("2. Generar")
-        mod_gen = st.radio("Seleccione tipo:", ["📮 Postales", "📄 Reportes"], label_visibility="collapsed", key="m_gen")
+        st.header("⚡ Generar")
         
-        st.header("3. Eventos")
-        mod_evt = st.radio("Seleccione tipo:", ["📅 Calendario"], label_visibility="collapsed", key="m_evt")
+        # Botón Postales
+        tipo_post = "primary" if st.session_state.active_module == "Postales" else "secondary"
+        if st.button("📮 Postales", type=tipo_post, use_container_width=True):
+            navegar_a("Postales")
+            st.rerun()
+            
+        # Botón Reportes
+        tipo_rep = "primary" if st.session_state.active_module == "Reportes" else "secondary"
+        if st.button("📄 Reportes", type=tipo_rep, use_container_width=True):
+            navegar_a("Reportes")
+            st.rerun()
+            
+        st.header("📅 Eventos")
         
-        # Lógica de selección "Exclusiva" simulada
-        # Por defecto tomamos la selección, pero si el usuario interactúa, priorizamos esa sección.
-        # Simplificación: Usamos un selector maestro invisible o asumimos que el usuario selecciona el módulo
-        # basado en la última interacción. Para esta versión simple, usaremos un selector maestro en session_state
-        # O mejor: Un sidebar con radio único pero con headers visuales (no soportado nativamente bonito).
-        
-        # Para cumplir exactamente "Crea otro submenú":
-        # Usaré un solo radio global pero lo pintaré bonito? No.
-        # Usaré la variable 'modulo' basada en un radio unificado pero con etiquetas claras.
-        
-        # REINTENTO DE UX LIMPIO:
-        # Un solo radio con headers simulados en el texto
-        nav_opts = ["📮 Postales", "📄 Reportes", "📅 Calendario"]
-        # Pero el usuario pidió submenús separados.
-        # Vamos a usar "Generar" como un radio y "Eventos" como otro, y gestionar cual se muestra.
-        
-        # Workaround para saber cuál se tocó último es difícil en Streamlit puro sin callbacks complejos.
-        # VOY A USAR UN SELECTBOX MAESTRO CON CATEGORIAS
-        modulo = st.sidebar.selectbox("Ir a:", ["📮 Postales", "📄 Reportes", "📅 Calendario"])
+        # Botón Calendario
+        tipo_cal = "primary" if st.session_state.active_module == "Calendario" else "secondary"
+        if st.button("📆 Calendario", type=tipo_cal, use_container_width=True):
+            navegar_a("Calendario")
+            st.rerun()
 
-        if st.button("💾 Guardar Config"):
+        if st.button("💾 Guardar Config", use_container_width=True):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
             st.toast("Guardado")
 
@@ -265,13 +331,14 @@ with st.sidebar:
 if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
+    modulo = st.session_state.active_module # Usar estado persistente
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     AZUL = RGBColor(0, 176, 240)
 
     # --------------------------------------------------------
     # MÓDULO POSTALES
     # --------------------------------------------------------
-    if modulo == "📮 Postales":
+    if modulo == "Postales":
         st.subheader("📮 Generador de Postales")
         
         df_view = df_full.copy()
@@ -312,7 +379,6 @@ else:
                     fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     
-                    # FECHA CORTA (SOLO CONFECHOR) + HORA
                     tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
                     fcf = f"{tfe_confechor.strip()}\n{tho.strip()}"
                     
@@ -357,9 +423,7 @@ else:
                                         tf.vertical_anchor = MSO_ANCHOR.MIDDLE 
                                         tf.word_wrap = True
                                         
-                                        # LIMPIAR PARRAFOS EXISTENTES Y CREAR NUEVOS PARA EVITAR HERENCIA DE FORMATO
                                         if tag == "<<Confechor>>":
-                                            # Caso Especial: Dos párrafos separados para asegurar centrado
                                             tf.clear()
                                             p1 = tf.paragraphs[0]
                                             p1.text = tfe_confechor.strip()
@@ -375,7 +439,6 @@ else:
                                             p2.font.color.rgb = AZUL
                                             p2.font.size = Pt(28)
                                         else:
-                                            # Caso Normal
                                             bp = tf._element.bodyPr
                                             for c in ['spAutoFit', 'normAutofit', 'noAutofit']:
                                                 if bp.find(qn(f'a:{c}')) is not None: bp.remove(bp.find(qn(f'a:{c}')))
@@ -404,7 +467,7 @@ else:
     # --------------------------------------------------------
     # MÓDULO REPORTES
     # --------------------------------------------------------
-    elif modulo == "📄 Reportes":
+    elif modulo == "Reportes":
         st.subheader("📄 Generador de Reportes")
         df_view = df_full.copy()
         for c in df_view.columns:
@@ -488,7 +551,6 @@ else:
                                         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
                                         tf.word_wrap = True
                                         
-                                        # LÓGICA DE CENTRADO ESPECIAL PARA CONFECHOR TAMBIÉN EN REPORTES
                                         if tag == "<<Confechor>>":
                                             tf.clear()
                                             p1 = tf.paragraphs[0]
@@ -496,7 +558,7 @@ else:
                                             p1.alignment = PP_ALIGN.CENTER
                                             p1.font.bold = True
                                             p1.font.color.rgb = AZUL
-                                            p1.font.size = Pt(20) # Tamaño reporte
+                                            p1.font.size = Pt(20)
                                             
                                             p2 = tf.add_paragraph()
                                             p2.text = tho.strip()
@@ -530,7 +592,7 @@ else:
     # --------------------------------------------------------
     # MÓDULO CALENDARIO
     # --------------------------------------------------------
-    elif modulo == "📅 Calendario":
+    elif modulo == "Calendario":
         st.subheader("📅 Calendario de Actividades")
         
         if 'todas_tablas' in st.session_state:
@@ -540,6 +602,7 @@ else:
                 idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
             
             with st.expander("📅 Cambiar Mes (Tabla)", expanded=False):
+                # CARGA AUTOMATICA
                 nueva_tabla = st.radio("Meses:", nombres_tablas, index=idx_actual, horizontal=True)
             
             if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
@@ -639,7 +702,7 @@ else:
             st.markdown(h, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
-    if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
+    if modulo in ["Postales", "Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
         st.divider()
         c1,c2,_=st.columns([1,1,3])
         if c1.button("☑️ Todo", key="dt"): 
