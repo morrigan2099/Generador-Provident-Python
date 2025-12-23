@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v102", layout="wide")
+st.set_page_config(page_title="Provident Pro v103", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v102 - Fix Menu")
+st.title("🚀 Generador Pro v103 - Mobile Grid")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -184,7 +184,6 @@ with st.sidebar:
     modulo = None
     if 'raw_records' in st.session_state:
         st.header("2. Módulos")
-        # --- AQUÍ ESTABA EL ERROR: EL NOMBRE DEBE SER EXACTO ---
         modulo = st.radio("Ir a:", ["📮 Postales", "📄 Reportes", "📅 Calendario"], index=2)
         if st.button("💾 Guardar Config"):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
@@ -331,7 +330,6 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
-                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -376,7 +374,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (CORREGIDO: NOMBRE DE OPCIÓN)
+    # MÓDULO CALENDARIO (CORREGIDO: NOMBRE Y CSS MOBILE FRIENDLY)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
@@ -416,11 +414,9 @@ else:
                 th = None
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
-                    if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('large',{}).get('url')
+                    if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
                 fechas_oc[fs].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(fs)
-
-        st.info(f"🔍 Eventos encontrados: {len(fechas_lista)}")
 
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
@@ -431,40 +427,119 @@ else:
             ay, am = mc.most_common(1)[0][0]
             st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
 
-            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS)
+            # 3. DIBUJAR CALENDARIO (HTML + CSS GRID FORZADO)
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # Cabecera Días
-            cols = st.columns(7)
-            for i, d in enumerate(["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]):
-                cols[i].markdown(f"<div style='text-align:center; font-weight:bold; background:#eee;'>{d}</div>", unsafe_allow_html=True)
+            # CSS PARA FORZAR 7 COLUMNAS EN MÓVIL
+            st.markdown("""
+            <style>
+            .c-grid { 
+                display: grid; 
+                grid-template-columns: repeat(7, 1fr); /* FORZA 7 COLUMNAS SIEMPRE */
+                gap: 2px;
+                width: 100%;
+                overflow-x: auto; /* Permite scroll horizontal si es muy pequeño */
+            }
+            .c-head { 
+                background: #eee; 
+                padding: 4px; 
+                text-align: center; 
+                font-weight: bold; 
+                font-size: 14px; /* Tamaño legible en PC */
+                border-radius: 2px; 
+            }
             
-            # Cuerpo Semanas
-            for week in weeks:
-                with st.container():
-                    cols = st.columns(7)
-                    for i, day in enumerate(week):
-                        with cols[i]:
-                            if day != 0:
-                                st.markdown(f"**{day}**") # HEADER
-                                
-                                k = f"{ay}-{str(am).zfill(2)}-{str(day).zfill(2)}"
-                                acts = fechas_oc.get(k, [])
-                                
-                                if acts:
-                                    if acts[0]['thumb']:
-                                        st.image(acts[0]['thumb'], use_container_width=True) # BODY
-                                    else:
-                                        st.caption("Sin postal")
-                                    
-                                    if len(acts) > 1:
-                                        st.error(f"+ {len(acts)-1} más") # FOOTER
-                                else:
-                                    st.write("") 
+            .c-cell { 
+                background: white; 
+                border: 1px solid #ccc; 
+                border-radius: 2px;
+                height: 120px; 
+                display: flex; 
+                flex-direction: column;
+                justify-content: space-between;
+                overflow: hidden;
+            }
+            .c-active { border-color: #00b0f0; background: #f0f8ff; }
+            
+            /* HEADER: DIA */
+            .c-day { 
+                flex: 0 0 auto;
+                font-weight: 900; 
+                font-size: 14px; 
+                padding: 2px 4px; 
+                background: #f9f9f9; 
+                border-bottom: 1px solid #eee;
+                color: #000;
+            }
+            
+            /* BODY: IMAGEN */
+            .c-body { 
+                flex-grow: 1; 
+                position: relative; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center;
+                background: #fff;
+                overflow: hidden;
+            }
+            .c-img { 
+                width: 100%; 
+                height: 100%; 
+                object-fit: cover; 
+            }
+            .c-noimg { font-size: 10px; color: #ccc; font-style: italic; }
+            
+            /* FOOTER: MAS */
+            .c-foot { 
+                flex: 0 0 auto;
+                background: #ffebeb; 
+                color: #d80000; 
+                font-weight: 900; 
+                text-align: center; 
+                font-size: 12px; 
+                padding: 1px;
+                border-top: 1px solid #ffebeb;
+            }
+            
+            /* MOBILE TWEAKS */
+            @media (max-width: 600px) {
+                .c-head { font-size: 10px; padding: 2px; }
+                .c-cell { height: 90px; }
+                .c-day { font-size: 12px; padding: 1px; }
+                .c-foot { font-size: 10px; }
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            h = "<div class='c-grid'>"
+            for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
+            
+            for wk in weeks:
+                for d in wk:
+                    if d == 0: h += "<div class='c-cell' style='border:none; background:transparent;'></div>"
+                    else:
+                        k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
+                        acts = fechas_oc.get(k, [])
+                        act_cls = "c-active" if acts else ""
+                        
+                        h += f"<div class='c-cell {act_cls}'>"
+                        h += f"<div class='c-day'>{d}</div>" # HEADER
+                        
+                        h += "<div class='c-body'>" # BODY
+                        if acts:
+                            if acts[0]['thumb']:
+                                h += f"<img src='{acts[0]['thumb']}' class='c-img'>"
                             else:
-                                st.write("") 
-                st.divider()
+                                h += "<span class='c-noimg'>Sin Foto</span>"
+                        h += "</div>"
+                        
+                        if len(acts) > 1: # FOOTER
+                            h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
+                        
+                        h += "</div>"
+            h += "</div>"
+            st.markdown(h, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
     if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
