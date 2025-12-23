@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v104", layout="wide")
+st.set_page_config(page_title="Provident Pro v105", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v104 - Styling")
+st.title("🚀 Generador Pro v105 - Full Width")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -330,7 +330,6 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
-                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -375,7 +374,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (ESTRUCTURA VISIBLE Y ORGANIZADA)
+    # MÓDULO CALENDARIO (CSS FULL WIDTH + COLORES)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
@@ -385,7 +384,6 @@ else:
             idx_actual = 0
             if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
                 idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
-            
             nueva_tabla = st.selectbox("Seleccionar Mes (Tabla):", nombres_tablas, index=idx_actual)
             
             if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
@@ -424,70 +422,76 @@ else:
             dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
             mc = Counter([(d.year, d.month) for d in dt_objs])
             ay, am = mc.most_common(1)[0][0]
-            
             st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
 
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # CSS REJILLA FORZADA 7 COLUMNAS + COLORES
+            # CSS AJUSTADO: Full Width, Colores y Layout
             st.markdown("""
             <style>
             .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+            
+            /* HEADER SEMANA */
             .c-head { 
-                background: #002060; /* AZUL OSCURO */
-                color: white; /* BLANCO */
+                background: #002060; /* Azul Oscuro */
+                color: white; 
                 padding: 5px; 
                 text-align: center; 
                 font-weight: bold; 
                 border-radius: 4px; 
             }
+            
             .c-cell { 
                 background: white; 
                 border: 1px solid #ccc; 
                 border-radius: 4px;
-                min-height: 140px; 
+                height: 160px; /* ALTO FIJO */
                 display: flex; 
                 flex-direction: column;
                 justify-content: space-between;
                 overflow: hidden;
             }
             
-            /* HEADER: DIA (FONDO CELESTE, TEXTO BLANCO) */
+            /* HEADER DIA (NUMERO) */
             .c-day { 
                 flex: 0 0 auto;
-                background: #00b0f0; 
+                background: #00b0f0; /* Celeste */
                 color: white;
                 font-weight: 900; 
                 font-size: 1.1em; 
-                padding: 2px 5px; 
+                padding: 2px 0; 
                 text-align: center;
             }
             
-            /* BODY: IMAGEN (FULL) */
+            /* BODY IMAGEN */
             .c-body { 
                 flex-grow: 1; 
+                width: 100%;
+                height: 100%; /* Forzar altura */
                 position: relative; 
                 display: flex; 
                 align-items: center; 
                 justify-content: center;
                 background: #fff;
+                padding: 0; /* SIN PADDING */
                 overflow: hidden;
-                padding: 0;
             }
+            
             .c-img { 
                 width: 100%; 
                 height: 100%; 
-                object-fit: cover; 
+                object-fit: cover; /* LLENAR TODO EL HUECO */
                 display: block;
             }
+            
             .c-noimg { font-size: 0.7em; color: #ccc; font-style: italic; }
             
-            /* FOOTER: MAS (FONDO AZUL OSCURO, TEXTO CELESTE) */
+            /* FOOTER (+N) */
             .c-foot { 
                 flex: 0 0 auto;
-                background: #002060; 
-                color: #00b0f0; 
+                background: #002060; /* Azul Oscuro */
+                color: #ffffff; /* BLANCO */
                 font-weight: 900; 
                 text-align: center; 
                 font-size: 0.9em; 
@@ -495,7 +499,7 @@ else:
             }
             
             @media (max-width: 600px) {
-                .c-cell { min-height: 100px; }
+                .c-cell { height: 110px; }
                 .c-day { font-size: 0.9em; }
                 .c-foot { font-size: 0.8em; }
             }
@@ -512,7 +516,6 @@ else:
                         k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
                         acts = fechas_oc.get(k, [])
                         
-                        # Inicio Celda
                         h += f"<div class='c-cell'>"
                         
                         # 1. Header (Dia)
@@ -531,7 +534,7 @@ else:
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         
-                        h += "</div>" # Fin Celda
+                        h += "</div>" 
             h += "</div>"
             st.markdown(h, unsafe_allow_html=True)
 
