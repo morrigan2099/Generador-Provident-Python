@@ -108,57 +108,64 @@ def obtener_concat_texto(record):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v157", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Provident Pro v158", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    /* ESPACIO SUPERIOR REDUCIDO A LA MITAD */
     .block-container { padding-top: 40px !important; padding-left: 5px !important; padding-right: 5px !important; }
-    header[data-testid="stHeader"] { background-color: rgba(255,255,255,0.9) !important; }
-
-    /* CONTENEDOR RÍGIDO */
-    .cal-container {
+    
+    /* CONTENEDOR MAESTRO DE SUPERPOSICIÓN */
+    .overlay-container {
+        position: relative;
         max-width: 400px;
         margin: 0 auto;
-        width: 100%;
     }
 
-    /* TABLA HTML PURA */
+    /* CAPA 0: TABLA VISUAL */
     .cal-grid-table {
         width: 100%;
         border-collapse: collapse;
         table-layout: fixed;
     }
-    .cal-grid-table th { background: #002060; color: white; font-size: 10px; padding: 5px 0; }
+    .cal-grid-table th { background: #002060; color: white; font-size: 10px; padding: 5px 0; border: 0.5px solid white; }
     .cal-grid-table td { 
         border: 0.5px solid #ccc; 
-        height: 110px; /* ALTO SOLICITADO */
+        height: 110px; 
         vertical-align: top; 
-        position: relative; 
         padding: 0 !important;
         background: white;
     }
 
-    /* ELEMENTOS INTERNOS */
     .cell-day-num { background: #00b0f0; color: white; font-weight: bold; font-size: 0.85em; text-align: center; height: 16px; line-height: 16px; }
     .cell-img { height: 80px; background-size: cover; background-position: center; background-repeat: no-repeat; }
     .cell-foot { height: 14px; background: #002060; color: white; text-align: center; font-size: 8px; line-height: 14px; }
 
-    /* BOTÓN INVISIBLE - POSICIONADO SOBRE LA CELDA DE 110PX */
-    .stButton > button[key^="day_"] {
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
+    /* CAPA 1: REJILLA DE BOTONES DE STREAMLIT (INVISIBLE PERO FUNCIONAL) */
+    .buttons-layer {
+        position: absolute;
+        top: 26px; /* Ajuste para saltar las cabeceras L-M-X... */
+        left: 0;
+        width: 100%;
+        height: calc(100% - 26px);
+        z-index: 10;
+        pointer-events: none; /* Deja pasar clicks a los hijos */
+    }
+    
+    .buttons-layer [data-testid="column"] {
+        padding: 0 !important;
+    }
+
+    .buttons-layer button {
         width: 100% !important;
         height: 110px !important;
         background: transparent !important;
         border: none !important;
         color: transparent !important;
-        z-index: 10 !important;
+        pointer-events: auto; /* Activa el click solo en los botones */
         margin: 0 !important;
-        padding: 0 !important;
     }
 
+    /* NAV POSTALES */
     .nav-title { text-align: center; line-height: 1.2; }
     .nav-title b { color: #002060; font-size: 1.2em; display: block; text-transform: uppercase; }
     div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; }
@@ -172,7 +179,6 @@ if 'idx_postal' not in st.session_state: st.session_state.idx_postal = 0
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.image("https://www.provident.com.mx/content/dam/provident-mexico/logos/logo-provident.png", width=120)
     st.header("⚙️ Menú")
@@ -198,11 +204,11 @@ with st.sidebar:
         if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
         if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
 
-# --- MAIN ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Selecciona una base en el menú lateral.")
+    st.info("👈 Conecta Airtable en el sidebar.")
 else:
     mod = st.session_state.active_module
+    AZUL_PRO = RGBColor(0, 176, 240)
 
     if mod == "Calendario":
         fechas_oc = {}
@@ -242,16 +248,18 @@ else:
             sk = str(suc).lower().strip()
             gp = WHATSAPP_GROUPS.get(sk, {"link":"", "name":"N/A"})
             msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
-            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:10px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
+            jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:10px;cursor:pointer;font-weight:bold;margin-top:10px;'>📲 WhatsApp {gp['name']}</div>"
             if gp['link']: st.components.v1.html(jwa, height=80)
         
         else:
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
-                st.markdown(f"<div class='cal-container'>", unsafe_allow_html=True)
+                weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
+                
+                st.markdown(f"<div class='overlay-container'>", unsafe_allow_html=True)
                 st.markdown(f"<div style='background:linear-gradient(135deg,#002060,#00b0f0);padding:10px;border-radius:8px;text-align:center;color:white;font-weight:bold;text-transform:uppercase;margin-bottom:10px;box-shadow:0 4px 10px rgba(0,0,0,0.2);'>{MESES_ES[dt_ref.month-1]} {dt_ref.year}</div>", unsafe_allow_html=True)
                 
-                weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
+                # --- CAPA 0: TABLA HTML ---
                 table_html = '<table class="cal-grid-table"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
                 for week in weeks:
                     table_html += '<tr>'
@@ -267,6 +275,8 @@ else:
                 table_html += '</table>'
                 st.markdown(table_html, unsafe_allow_html=True)
 
+                # --- CAPA 1: BOTONES SUPERPUESTOS ---
+                st.markdown('<div class="buttons-layer">', unsafe_allow_html=True)
                 for week in weeks:
                     cols = st.columns(7)
                     for i, day in enumerate(week):
@@ -278,9 +288,10 @@ else:
                                         st.session_state.dia_seleccionado = fk
                                         st.session_state.idx_postal = 0
                                         st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown('</div></div>', unsafe_allow_html=True)
 
     elif mod in ["Postales", "Reportes"]:
+        # (Lógica de generación restaurada v157...)
         st.subheader(f"Generador de {mod}")
         df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
         for c in df.columns:
@@ -292,13 +303,13 @@ else:
         
         if idx_list:
             f_tpl = f"Plantillas/{mod.upper()}"
-            if not os.path.exists(f_tpl): os.makedirs(f_tpl)
             archs = [f for f in os.listdir(f_tpl) if f.endswith('.pptx')]
             tipos = df.loc[idx_list, "Tipo"].unique()
             if 'config' not in st.session_state: st.session_state.config = {"plantillas": {}}
-            for t in tipos: st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archs, key=f"p_{t}")
+            for t in tipos:
+                st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archs, key=f"p_{t}")
 
-            if st.button("🚀 GENERAR PACK COMPLETO"):
+            if st.button("🚀 GENERAR PACK"):
                 p_bar = st.progress(0); zip_data = []
                 for i, ix in enumerate(idx_list):
                     rec, orig = st.session_state.raw_records[ix]['fields'], st.session_state.raw_data_original[ix]['fields']
