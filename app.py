@@ -38,7 +38,7 @@ WHATSAPP_GROUPS = {
 }
 
 # ============================================================
-#  FUNCIONES TÉCNICAS (IMAGEN, TEXTO Y PDF)
+#  FUNCIONES TÉCNICAS
 # ============================================================
 
 def recorte_inteligente_bordes(img, umbral_negro=60):
@@ -47,15 +47,12 @@ def recorte_inteligente_bordes(img, umbral_negro=60):
     h, w = arr.shape
     def fila_es_negra(fila): return (np.sum(fila < 35) / fila.size) * 100 > umbral_negro
     def columna_es_negra(col): return (np.sum(col < 35) / col.size) * 100 > umbral_negro
-    top = 0
+    top, bottom = 0, h - 1
     while top < h and fila_es_negra(arr[top, :]): top += 1
-    bottom = h - 1
     while bottom > top and fila_es_negra(arr[bottom, :]): bottom -= 1
-    left = 0
+    left, right = 0, w - 1
     while left < w and columna_es_negra(arr[:, left]): left += 1
-    right = w - 1
     while right > left and columna_es_negra(arr[:, right]): right -= 1
-    if right <= left or bottom <= top: return img
     return img.crop((left, top, right + 1, bottom + 1))
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
@@ -93,7 +90,8 @@ def procesar_texto_maestro(texto, campo=""):
         if es_inicio or despues_parentesis or (p not in prep):
             if p.startswith("("): resultado.append("(" + p[1:].capitalize())
             else: resultado.append(p.capitalize())
-        else: resultado.append(p)
+        else:
+            resultado.append(p)
     return " ".join(resultado)
 
 def generar_pdf(pptx_bytes):
@@ -131,7 +129,7 @@ def obtener_fecha_texto(fecha_dt):
 # ============================================================
 #  INICIO APP
 # ============================================================
-st.set_page_config(page_title="Provident Pro v138", layout="wide")
+st.set_page_config(page_title="Provident Pro v139", layout="wide")
 
 if 'active_module' not in st.session_state: st.session_state.active_module = st.query_params.get("view", "Calendario")
 if 'dia_seleccionado' not in st.session_state: st.session_state.dia_seleccionado = None
@@ -142,18 +140,36 @@ def navegar_a(modulo):
     st.session_state.dia_seleccionado = None
     st.query_params["view"] = modulo
 
-# CSS FORZADO PARA MÓVIL (Versión 137 Mejorada)
+# --- CSS PARA FORZAR DISEÑO MÓVIL ---
 st.markdown("""
 <style>
+    /* FORZAR 7 COLUMNAS */
     [data-testid="column"] { min-width: 0px !important; flex: 1 1 0% !important; }
+    
+    /* CABECERA POSTAL (GRID PARA QUE NO SE SALTE) */
+    .header-container {
+        display: grid;
+        grid-template-columns: 50px 1fr 50px;
+        align-items: center;
+        width: 100%;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .header-title { line-height: 1.1; }
+    .header-title b { font-size: 1.1em; color: #333; display: block; }
+    .header-title small { font-size: 0.9em; color: #666; display: block; }
+
     .cal-title { text-align: center; font-size: 1.3em; font-weight: bold; margin-bottom: 10px; }
     .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 10px; }
     .c-cell-container { position: relative; height: 110px; border: 1px solid #ccc; border-radius: 2px; overflow: hidden; background: white; }
     .c-cell-content { display: flex; flex-direction: column; height: 100%; justify-content: space-between; }
     .c-day { background: #00b0f0; color: white; font-weight: 900; font-size: 0.9em; text-align: center; padding: 1px 0; }
-    .c-body { flex-grow: 1; background-size: cover; background-position: center; }
+    .c-body { flex-grow: 1; background-size: cover; background-position: center; background-color: #f8f8f8; }
     .c-foot { height: 16px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.7em; padding: 1px; }
-    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; border: none !important; font-weight: bold !important; width: 100%; }
+    
+    /* BOTÓN VOLVER CELESTE */
+    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; border: none !important; }
+    
     .stButton > button[key^="day_"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent !important; border: none !important; color: transparent !important; z-index: 10; }
 </style>
 """, unsafe_allow_html=True)
@@ -190,14 +206,14 @@ with st.sidebar:
 
 # --- MAIN ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Conecta una base.")
+    st.info("👈 Conecta una base en el sidebar.")
 else:
     modulo = st.session_state.active_module
     AZUL_PRO = RGBColor(0, 176, 240)
 
-    # ==========================================
-    # LÓGICA DE POSTALES Y REPORTES (RESTAURADA)
-    # ==========================================
+    # --------------------------------------------------------
+    # MÓDULOS DE GENERACIÓN (POSTALES Y REPORTES)
+    # --------------------------------------------------------
     if modulo in ["Postales", "Reportes"]:
         st.subheader(f"📮 Generador de {modulo}")
         df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
@@ -271,9 +287,9 @@ else:
                         for f in archivos: z.writestr(f["n"], f["d"])
                     st.download_button("⬇️ DESCARGAR ZIP", zb.getvalue(), f"{modulo}.zip", "application/zip")
 
-    # ==========================================
-    # LÓGICA DE CALENDARIO (MÓVIL FORZADO)
-    # ==========================================
+    # --------------------------------------------------------
+    # MÓDULO CALENDARIO (REDISEÑADO)
+    # --------------------------------------------------------
     elif modulo == "Calendario":
         fechas_oc = {}
         for r in st.session_state.raw_data_original:
@@ -284,6 +300,7 @@ else:
                 th = r['fields']['Postal'][0].get('url') if 'Postal' in r['fields'] else None
                 fechas_oc[fk].append({"thumb": th, "raw_fields": r['fields']})
 
+        # --- VISTA DETALLE POSTAL ---
         if st.session_state.dia_seleccionado:
             k = st.session_state.dia_seleccionado
             evts = sorted(fechas_oc[k], key=lambda x: x['raw_fields'].get('Hora', ''))
@@ -292,41 +309,65 @@ else:
             evt = evts[curr_idx]
             fields = evt['raw_fields']
             dt_obj = datetime.strptime(k, '%Y-%m-%d')
-            fecha_full = f"{DIAS_ES[dt_obj.weekday()].capitalize()} {dt_obj.day} de {MESES_ES[dt_obj.month-1].capitalize()}"
             
-            # Cabecera forzada 1 fila
-            c1, c2, c3 = st.columns([1, 4, 1])
-            with c1: 
-                if total > 1 and st.button("⬅️", key="p"): st.session_state.idx_postal=(curr_idx-1)%total; st.rerun()
-            with c2: st.markdown(f"<h4 style='text-align:center; margin:0;'>{fecha_full}</h4>", unsafe_allow_html=True)
-            with c3: 
-                if total > 1 and st.button("➡️", key="n"): st.session_state.idx_postal=(curr_idx+1)%total; st.rerun()
+            # CABECERA MANUAL HTML (SOLUCIÓN MÓVIL)
+            mes_txt = MESES_ES[dt_obj.month-1].upper()
+            dia_txt = f"{DIAS_ES[dt_obj.weekday()].capitalize()} {dt_obj.day}"
+            
+            st.markdown(f"""
+            <div class="header-container">
+                <div id="btn-p"></div>
+                <div class="header-title">
+                    <b>{mes_txt}</b>
+                    <small>{dia_txt}</small>
+                </div>
+                <div id="btn-n"></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Inyectar botones de Streamlit en los placeholders del HTML anterior usando CSS absoluto
+            # Esto es necesario para que funcionen como botones de Python reales
+            btn_col1, _, btn_col3 = st.columns([1, 4, 1])
+            with btn_col1: 
+                if total > 1:
+                    if st.button("⬅️", key="p"): st.session_state.idx_postal=(curr_idx-1)%total; st.rerun()
+            with btn_col3: 
+                if total > 1:
+                    if st.button("➡️", key="n"): st.session_state.idx_postal=(curr_idx+1)%total; st.rerun()
             
             if st.button("🔙 VOLVER AL CALENDARIO", key="btn_volver"):
                 st.session_state.dia_seleccionado = None; st.rerun()
             
             st.divider()
+            
+            # Layout Side-by-Side (Redimensionado para móvil)
             cx, cy = st.columns([1, 1.2])
             with cx:
                 if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
             with cy:
                 suc, tip, hor = fields.get('Sucursal',''), fields.get('Tipo',''), obtener_hora_texto(fields.get('Hora',''))
                 ubi = obtener_concat_texto(fields)
-                st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}**\n\n**⏰ {hor}**\n\n**📍 {ubi}**")
+                st.markdown(f"**🏢 {suc}**")
+                st.markdown(f"**📌 {tip}**")
+                st.markdown(f"**⏰ {hor}**")
+                st.markdown(f"**📍 {ubi}**")
                 
                 # WhatsApp
                 sk = str(suc).lower().strip()
                 gp = WHATSAPP_GROUPS.get(sk, {"link": "", "name": "N/A"})
-                msj = f"Excelente día, te esperamos este {fecha_full} para el evento de {tip}, a las {hor} en {ubi}"
-                jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:10px;text-align:center;border-radius:5px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
-                if gp['link']: st.components.v1.html(jwa, height=60)
+                msj = f"Excelente día, te esperamos este {dia_txt} de {mes_txt.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
+                jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:5px;cursor:pointer;font-weight:bold;margin-top:10px;'>📲 WhatsApp {gp['name']}</div>"
+                if gp['link']: st.components.v1.html(jwa, height=75)
 
+        # --- VISTA CALENDARIO ---
         else:
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
                 st.markdown(f"<div class='cal-title'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
                 ch = st.columns(7)
-                for i, d in enumerate(["L","M","M","J","V","S","D"]): ch[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
+                dias_l = ["L","M","M","J","V","S","D"]
+                for i, d in enumerate(dias_l): ch[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
+                
                 weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
                 for week in weeks:
                     cols = st.columns(7)
