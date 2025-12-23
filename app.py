@@ -101,6 +101,7 @@ def generar_pdf(pptx_bytes):
 
 # --- LÓGICA DE DATOS ---
 def obtener_fecha_texto(fecha_dt):
+    # Formato largo estándar (con día de la semana) para <<Confecha>>
     dia_idx = fecha_dt.weekday()
     return f"{DIAS_ES[dia_idx]} {fecha_dt.day} de {MESES_ES[fecha_dt.month - 1]} de {fecha_dt.year}"
 
@@ -141,7 +142,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v121", layout="wide")
+st.set_page_config(page_title="Provident Pro v122", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -186,7 +187,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v121")
+st.title("🚀 Generador Pro v122")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -282,7 +283,12 @@ else:
                     ft = rec.get('Tipo', 'Sin Tipo')
                     fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
-                    fcf = f"{tfe.strip()}\n{tho.strip()}"
+                    
+                    # --- CAMBIO SOLICITADO: FORMATO FECHA ESPECÍFICO PARA CONFECHOR ---
+                    # Formato: "mmmm dd 'de' aaaa" (Diciembre 23 de 2025)
+                    tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
+                    
+                    fcf = f"{tfe_confechor}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
@@ -343,7 +349,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO REPORTES (RESTAURADO COMPLETO)
+    # MÓDULO REPORTES
     # --------------------------------------------------------
     elif modulo == "📄 Reportes":
         st.subheader("📄 Generador de Reportes")
@@ -373,12 +379,7 @@ else:
 
             if st.button("🔥 CREAR REPORTES", type="primary"):
                 p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
-                # RESTAURADO: Todas las variables y tamaños
-                TAM_MAPA = {
-                    "<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, 
-                    "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24,
-                    "<<Confechor>>":20, "<<Concat>>":12
-                }
+                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24, "<<Confechor>>":20, "<<Concat>>":12}
                 
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
@@ -389,15 +390,15 @@ else:
                     ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     
-                    # LOGICA RESTAURADA: Calcular Confechor y Concat
-                    fcf = f"{tfe.strip()}\n{tho.strip()}"
-                    fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
+                    # --- CAMBIO SOLICITADO: FORMATO FECHA ESPECÍFICO PARA CONFECHOR ---
+                    tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
+                    fcf = f"{tfe_confechor}\n{tho.strip()}"
                     
+                    fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
+                    fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
                     
-                    # RESTAURADO: Diccionario completo
                     reps = {
                         "<<Tipo>>":textwrap.fill(ft,width=35), 
                         "<<Sucursal>>":fs, 
@@ -437,11 +438,7 @@ else:
                                         elif tag=="<<Conhora>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
                                         else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
                                         tf.clear(); p = tf.paragraphs[0]
-                                        
-                                        # RESTAURADO: Alineación centrada para todos
-                                        if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>", "<<Confechor>>"]: 
-                                            p.alignment = PP_ALIGN.CENTER
-                                            
+                                        if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>", "<<Confechor>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
                                         run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
@@ -543,19 +540,23 @@ else:
                         acts = fechas_oc.get(k, [])
                         
                         h += f"<div class='c-cell'>"
+                        
+                        # HEADER
                         h += f"<div class='c-day'>{d}</div>"
                         
+                        # BODY
                         style_bg = ""
                         if acts and acts[0]['thumb']:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         h += f"<div class='c-body' {style_bg}></div>"
                         
+                        # FOOTER LOGIC
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
-                            h += f"<div class='c-foot'>&nbsp;</div>"
+                            h += f"<div class='c-foot'>&nbsp;</div>" # Azul sin texto
                         else:
-                            h += f"<div class='c-foot-empty'></div>"
+                            h += f"<div class='c-foot-empty'></div>" # Gris vacío
                         
                         h += "</div>"
             h += "</div>"
