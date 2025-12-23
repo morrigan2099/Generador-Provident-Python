@@ -20,7 +20,7 @@ from PIL import Image, ImageOps, ImageFilter, ImageChops
 from collections import Counter
 
 # ============================================================
-#  CONFIGURACIÓN GLOBAL
+#  CONFIGURACIÓN
 # ============================================================
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -29,7 +29,6 @@ DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domin
 # ============================================================
 #  FUNCIONES TÉCNICAS
 # ============================================================
-
 def recorte_inteligente_bordes(img, umbral_negro=60):
     img_gray = img.convert("L")
     arr = np.array(img_gray)
@@ -99,7 +98,6 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- LÓGICA DE DATOS ---
 def obtener_fecha_texto(fecha_dt):
     dia_idx = fecha_dt.weekday()
     return f"{DIAS_ES[dia_idx]} {fecha_dt.day} de {MESES_ES[fecha_dt.month - 1]} de {fecha_dt.year}"
@@ -140,18 +138,17 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v97", layout="wide")
+st.set_page_config(page_title="Provident Pro v98", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v97")
+st.title("🚀 Generador Pro v98")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
@@ -189,7 +186,6 @@ with st.sidebar:
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
             st.toast("Guardado")
 
-# --- MAIN ---
 if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
@@ -197,11 +193,10 @@ else:
     AZUL = RGBColor(0, 176, 240)
 
     # --------------------------------------------------------
-    # MÓDULO: POSTALES
+    # MÓDULO POSTALES
     # --------------------------------------------------------
     if modulo == "📮 Postales":
         st.subheader("📮 Generador de Postales")
-        
         df_view = df_full.copy()
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
@@ -238,8 +233,7 @@ else:
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
-                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {fcc}")[:120] + ".png"
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -285,7 +279,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO: REPORTES
+    # MÓDULO REPORTES
     # --------------------------------------------------------
     elif modulo == "📄 Reportes":
         st.subheader("📄 Generador de Reportes")
@@ -326,7 +320,6 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
-                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -371,7 +364,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO: CALENDARIO (ESTRUCTURA VISIBLE Y ORGANIZADA)
+    # MÓDULO CALENDARIO (ESTRUCTURA HTML TABLE)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario Visual":
         st.subheader("📅 Calendario de Actividades")
@@ -381,7 +374,6 @@ else:
             idx_actual = 0
             if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
                 idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
-            
             nueva_tabla = st.selectbox("Seleccionar Mes (Tabla):", nombres_tablas, index=idx_actual)
             
             if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
@@ -414,121 +406,107 @@ else:
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
 
+        st.info(f"🔍 Encontrados {len(fechas_lista)} eventos.")
+
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
-            dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
-            mc = Counter([(d.year, d.month) for d in dt_objs])
-            ay, am = mc.most_common(1)[0][0]
+            # Auto-detectar año/mes
+            fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
+            meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
+            anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
             
-            st.write(f"📅 **{MESES_ES[am-1].capitalize()} {ay}** - {len(fechas_lista)} Eventos")
+            st.markdown(f"**Visualizando: {MESES_ES[mes_cal-1].capitalize()} {anio_cal}**")
 
+            # TABLA HTML INDESTRUCTIBLE
             cal = calendar.Calendar(firstweekday=0) 
-            weeks = cal.monthdayscalendar(ay, am)
+            weeks = cal.monthdayscalendar(anio_cal, mes_cal)
             
-            # CSS PARA ESTRUCTURA VERTICAL (Header - Image - Footer)
-            st.markdown("""
+            # Estilos directos
+            html = """
             <style>
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-            .c-head { 
-                background: #eee; 
-                padding: 5px; 
-                text-align: center; 
-                font-weight: bold; 
-                border-radius: 4px; 
-            }
-            .c-cell { 
-                background: white; 
-                border: 1px solid #ccc; 
-                border-radius: 4px;
-                height: 140px; 
-                display: flex; 
-                flex-direction: column;
-                justify-content: space-between;
-                overflow: hidden;
-            }
-            .c-active { border-color: #00b0f0; background: #f0f8ff; }
-            
-            /* 1. HEADER (DIA) */
-            .c-day { 
-                flex: 0 0 auto;
-                font-weight: 900; 
-                font-size: 1.3em; 
-                padding: 2px 5px; 
-                background: #f9f9f9; 
-                border-bottom: 1px solid #eee;
-                color: #000;
-            }
-            
-            /* 2. BODY (IMAGEN) */
-            .c-body { 
-                flex-grow: 1; 
-                position: relative; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
-                background: #fff;
-                overflow: hidden;
-            }
-            .c-img { 
-                width: 100%; 
-                height: 100%; 
-                object-fit: cover; 
-            }
-            .c-noimg { font-size: 0.7em; color: #ccc; font-style: italic; }
-            
-            /* 3. FOOTER (+N) */
-            .c-foot { 
-                flex: 0 0 auto;
-                background: #ffebeb; 
-                color: #d80000; 
-                font-weight: 900; 
-                text-align: center; 
-                font-size: 0.9em; 
-                padding: 2px;
-                border-top: 1px solid #ffebeb;
-            }
-            
-            @media (max-width: 600px) {
-                .c-cell { height: 100px; }
-                .c-day { font-size: 1em; }
-            }
+                .cal-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; table-layout: fixed; }
+                .cal-th { background-color: #f0f2f6; color: #000; font-weight: bold; text-align: center; padding: 5px; border: 1px solid #ddd; }
+                .cal-td { 
+                    border: 1px solid #ddd; 
+                    height: 120px; 
+                    vertical-align: top; 
+                    padding: 0; 
+                    background-color: #fff !important; 
+                    position: relative; 
+                }
+                .cal-header-day {
+                    background-color: #f9f9f9;
+                    color: #000 !important;
+                    font-weight: 900;
+                    font-size: 16px;
+                    padding: 2px 5px;
+                    border-bottom: 1px solid #eee;
+                }
+                .cal-body {
+                    height: 80px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    overflow: hidden;
+                    background-color: #fff;
+                }
+                .cal-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                .cal-footer {
+                    background-color: #fff0f0;
+                    color: #D80000 !important;
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 14px;
+                    padding: 2px;
+                    border-top: 1px solid #ffcccc;
+                }
             </style>
-            """, unsafe_allow_html=True)
-
-            h = "<div class='c-grid'>"
-            for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
+            <table class='cal-table'>
+                <thead>
+                    <tr>
+                        <th class='cal-th'>LUN</th><th class='cal-th'>MAR</th><th class='cal-th'>MIÉ</th>
+                        <th class='cal-th'>JUE</th><th class='cal-th'>VIE</th><th class='cal-th'>SÁB</th>
+                        <th class='cal-th'>DOM</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
-            for wk in weeks:
-                for d in wk:
-                    if d == 0: h += "<div class='c-cell' style='border:none; background:transparent;'></div>"
+            for week in weeks:
+                html += "<tr>"
+                for day in week:
+                    if day == 0:
+                        html += "<td class='cal-td' style='background-color: #f4f4f4 !important;'></td>"
                     else:
-                        k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
-                        acts = fechas_oc.get(k, [])
-                        act_cls = "c-active" if acts else ""
+                        f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
+                        acts = fechas_oc.get(f_key, [])
                         
-                        # Inicio Celda
-                        h += f"<div class='c-cell {act_cls}'>"
+                        # 1. HEADER
+                        cell = f"<div class='cal-header-day'>{day}</div>"
                         
-                        # 1. Header
-                        h += f"<div class='c-day'>{d}</div>" 
-                        
-                        # 2. Body
-                        h += "<div class='c-body'>"
+                        # 2. BODY
+                        cell += "<div class='cal-body'>"
                         if acts:
                             if acts[0]['thumb']:
-                                h += f"<img src='{acts[0]['thumb']}' class='c-img'>"
+                                cell += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
                             else:
-                                h += "<span class='c-noimg'>Sin Foto</span>"
-                        h += "</div>"
+                                cell += "<span style='font-size:10px; color:#ccc'>Sin foto</span>"
+                        cell += "</div>"
                         
-                        # 3. Footer
+                        # 3. FOOTER
                         if len(acts) > 1:
-                            h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
+                            cell += f"<div class='cal-footer'>+ {len(acts)-1} más</div>"
                         
-                        h += "</div>" # Fin Celda
-            h += "</div>"
-            st.markdown(h, unsafe_allow_html=True)
+                        html += f"<td class='cal-td'>{cell}</td>"
+                html += "</tr>"
+            
+            html += "</tbody></table>"
+            st.markdown(html, unsafe_allow_html=True)
 
     # --- DESCARGAS ---
     if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
