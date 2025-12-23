@@ -7,6 +7,7 @@ import re
 import numpy as np
 import textwrap
 import calendar
+import urllib.parse
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
@@ -20,11 +21,21 @@ from PIL import Image, ImageOps, ImageFilter, ImageChops
 from collections import Counter
 
 # ============================================================
-#  CONFIGURACIÓN GLOBAL
+#  CONFIGURACIÓN GLOBAL Y WHATSAPP
 # ============================================================
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
             "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+
+WHATSAPP_GROUPS = {
+    "cordoba": {"link": "https://chat.whatsapp.com/EablxD3sq3n65GHWq9uKTg", "name": "CORDOBA Volanteo PDV Provident"},
+    "boca del rio": {"link": "https://chat.whatsapp.com/ES2ufZaP8f3JrNyO9lpFcX", "name": "BOCA DEL RIO Volanteo PDV Provident"},
+    "orizaba": {"link": "https://chat.whatsapp.com/EHITAvFTeYO5hOsS14xXJM", "name": "ORIZABA Volanteo PDV Provident"},
+    "tuxtepec": {"link": "https://chat.whatsapp.com/HkKsqVFYZSn99FPdjZ7Whv", "name": "TUXTEPEC Volanteo PDV Provident"},
+    "oaxaca": {"link": "https://chat.whatsapp.com/JRawICryDEf8eO2RYKqS0T", "name": "OAXACA Volanteo PDV Provident"},
+    "tehuacan": {"link": "https://chat.whatsapp.com/E9z0vLSwfZCB97Ou4A6Chv", "name": "TEHUACAN Volanteo PDV Provident"},
+    "xalapa": {"link": "", "name": "XALAPA Volanteo PDV Provident"},
+}
 
 # ============================================================
 #  FUNCIONES TÉCNICAS
@@ -121,7 +132,10 @@ def obtener_hora_texto(hora_str):
         elif h >= 20: suf = "p.m."
         else: suf = "a.m."
         h_show = h - 12 if h > 12 else (12 if h == 0 else h)
-        return f"{h_show}:{m} {suf}"
+        
+        # Formato solicitado h:mm a.m./p.m.
+        suf_wa = "a.m." if h < 12 else "p.m."
+        return f"{h_show}:{m} {suf_wa}"
     return hora_str
 
 def obtener_concat_texto(record):
@@ -129,30 +143,95 @@ def obtener_concat_texto(record):
     val_punto = record.get('Punto de reunion')
     val_ruta = record.get('Ruta a seguir')
     val_mun = record.get('Municipio')
-    val_sec = record.get('Seccion')
 
-    if val_punto and str(val_punto).lower() != 'none': parts.append(str(val_punto))
-    if val_ruta and str(val_ruta).lower() != 'none': parts.append(str(val_ruta))
-    if val_mun and str(val_mun).lower() != 'none': parts.append(f"Municipio {val_mun}")
-    if val_sec and str(val_sec).lower() != 'none': parts.append(f"Sección {str(val_sec).upper()}")
+    if val_punto and str(val_punto).lower() != 'none' and val_punto != "": parts.append(str(val_punto))
+    if val_ruta and str(val_ruta).lower() != 'none' and val_ruta != "": parts.append(str(val_ruta))
+    if val_mun and str(val_mun).lower() != 'none' and val_mun != "": parts.append(str(val_mun))
     return ", ".join(parts)
+
+# ============================================================
+#  DIALOGO DETALLES EVENTO (INTERACTIVO)
+# ============================================================
+@st.dialog("Detalles del Día", width="large")
+def mostrar_detalles_dia(eventos_del_dia, k_fecha):
+    if 'idx_evento' not in st.session_state:
+        st.session_state.idx_evento = 0
+        
+    if st.session_state.idx_evento >= len(eventos_del_dia): st.session_state.idx_evento = 0
+    elif st.session_state.idx_evento < 0: st.session_state.idx_evento = len(eventos_del_dia) - 1
+        
+    evt = eventos_del_dia[st.session_state.idx_evento]
+    fields = evt.get('raw_fields', {})
+    
+    # Navegación
+    if len(eventos_del_dia) > 1:
+        c1, c2, c3 = st.columns([1, 6, 1])
+        if c1.button("⬅️", key="btn_prev"):
+            st.session_state.idx_evento -= 1
+            st.rerun()
+        if c3.button("➡️", key="btn_next"):
+            st.session_state.idx_evento += 1
+            st.rerun()
+        with c2: st.markdown(f"<p style='text-align:center;'>Actividad {st.session_state.idx_evento + 1} de {len(eventos_del_dia)}</p>", unsafe_allow_html=True)
+
+    # Imagen
+    if evt.get('thumb'): st.image(evt['thumb'], use_container_width=True)
+    else: st.info("Sin imagen postal")
+
+    # Datos
+    sucursal_raw = str(fields.get('Sucursal', '')).lower().strip()
+    tipo = fields.get('Tipo', 'Sin Tipo')
+    dt_obj = datetime.strptime(k_fecha, '%Y-%m-%d')
+    fecha_wa = f"{DIAS_ES[dt_obj.weekday()].capitalize()} {dt_obj.day} de {MESES_ES[dt_obj.month-1]}"
+    hora = obtener_hora_texto(fields.get('Hora', ''))
+    ubicacion = obtener_concat_texto(fields)
+    
+    st.markdown(f"**🏢 Sucursal:** {fields.get('Sucursal')}")
+    st.markdown(f"**📌 Tipo:** {tipo}")
+    st.markdown(f"**⏰ Hora:** {hora}")
+    st.markdown(f"**📍 Ubicación:** {ubicacion}")
+
+    # Lógica WhatsApp
+    group_info = WHATSAPP_GROUPS.get(sucursal_raw, {"link": "", "name": "Grupo no encontrado"})
+    
+    # Mensaje solicitado
+    mensaje_copiar = f"Excelente día, te esperamos este {fecha_wa} para el evento de {tipo}, a las {hora} en {ubicacion}"
+    
+    # JS para copiar y abrir link
+    js_code = f"""
+        <script>
+        function copyAndGo() {{
+            const text = `{mensaje_copiar}`;
+            navigator.clipboard.writeText(text).then(() => {{
+                window.open("{group_info['link']}", "_blank");
+            }});
+        }}
+        </script>
+        <div onclick="copyAndGo()" style="background-color:#25D366; color:white; padding:12px; text-align:center; border-radius:8px; font-weight:bold; cursor:pointer; font-size:16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            Copia mensaje y abre {group_info['name']}
+        </div>
+    """
+    
+    if group_info['link']:
+        st.components.v1.html(js_code, height=70)
+    else:
+        st.warning(f"⚠️ No hay link configurado para la sucursal: {fields.get('Sucursal')}")
 
 # ============================================================
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v129", layout="wide")
+st.set_page_config(page_title="Provident Pro v131", layout="wide")
 
-# 0. NAVEGACIÓN PERSISTENTE
+# NAVEGACIÓN PERSISTENTE
 if 'active_module' not in st.session_state:
-    qp = st.query_params.get("view", "Calendario") 
-    st.session_state.active_module = qp
+    st.session_state.active_module = st.query_params.get("view", "Calendario")
 
 def navegar_a(modulo):
     st.session_state.active_module = modulo
     st.query_params["view"] = modulo
 
-# 1. BLOQUEO TECLADO
+# BLOQUEO TECLADO
 st.markdown("""
 <script>
     const observer = new MutationObserver((mutations) => {
@@ -168,26 +247,18 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS - ÚNICAMENTE CALENDARIO
+# CSS CALENDARIO
 st.markdown("""
 <style>
-    /* CALENDARIO PERSONALIZADO (AZUL CORPORATIVO) */
-    .cal-title {
-        text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
-    }
-    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
-    .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-    .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-    .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
-    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
-    .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
-    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
-    
-    @media (max-width: 600px) {
-        .c-cell { height: 110px; }
-        .c-day { font-size: 0.9em; }
-        .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; }
-    }
+    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin-bottom: 10px; color: #333; background-color: #fff; }
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+    .c-cell { background: white; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+    .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
+    .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
+    @media (max-width: 600px) { .c-cell { height: 110px; } .c-day { font-size: 0.9em; } .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; } }
 </style>
 """, unsafe_allow_html=True)
 
@@ -196,7 +267,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v129")
+st.title("🚀 Generador Pro v131")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -206,7 +277,6 @@ with st.sidebar:
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
-        
         with st.expander("📂 Seleccionar Base", expanded=True):
             base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
         
@@ -214,14 +284,12 @@ with st.sidebar:
             st.session_state['base_activa_id'] = base_opts[base_sel]
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             if r_tab.status_code == 200:
-                tablas_data = r_tab.json()['tables']
-                st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
-                
+                st.session_state['todas_tablas'] = {t['name']: t['id'] for t in r_tab.json()['tables']}
                 with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
-                    tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
+                    tabla_sel = st.radio("Tablas:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
                 if 'tabla_actual_nombre' not in st.session_state or st.session_state['tabla_actual_nombre'] != tabla_sel:
-                    with st.spinner("Cargando datos automáticamente..."):
+                    with st.spinner("Cargando..."):
                         r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
                         recs = r_reg.json().get("records", [])
                         st.session_state.raw_data_original = recs
@@ -230,31 +298,18 @@ with st.sidebar:
                             for r in recs
                         ]
                         st.session_state['tabla_actual_nombre'] = tabla_sel
-                    st.success(f"✅ {len(recs)} registros cargados")
                     st.rerun()
 
     st.divider()
-    
-    # --- MENÚ DE NAVEGACIÓN ---
     if 'raw_records' in st.session_state:
         st.subheader("⚡ Generar")
-        
-        t_pos = "primary" if st.session_state.active_module == "Postales" else "secondary"
-        if st.button("📮 Postales", type=t_pos, use_container_width=True):
+        if st.button("📮 Postales", type="primary" if st.session_state.active_module == "Postales" else "secondary", use_container_width=True):
             navegar_a("Postales"); st.rerun()
-            
-        t_rep = "primary" if st.session_state.active_module == "Reportes" else "secondary"
-        if st.button("📄 Reportes", type=t_rep, use_container_width=True):
+        if st.button("📄 Reportes", type="primary" if st.session_state.active_module == "Reportes" else "secondary", use_container_width=True):
             navegar_a("Reportes"); st.rerun()
-            
         st.subheader("📅 Eventos")
-        t_cal = "primary" if st.session_state.active_module == "Calendario" else "secondary"
-        if st.button("📆 Calendario", type=t_cal, use_container_width=True):
+        if st.button("📆 Calendario", type="primary" if st.session_state.active_module == "Calendario" else "secondary", use_container_width=True):
             navegar_a("Calendario"); st.rerun()
-
-        if st.button("💾 Guardar Config", use_container_width=True):
-            with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
-            st.toast("Guardado")
 
 # --- MAIN ---
 if 'raw_records' not in st.session_state:
@@ -262,25 +317,14 @@ if 'raw_records' not in st.session_state:
 else:
     modulo = st.session_state.active_module
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    AZUL = RGBColor(0, 176, 240)
 
-    # --------------------------------------------------------
-    # MÓDULO POSTALES
-    # --------------------------------------------------------
     if modulo == "Postales":
         st.subheader("📮 Generador de Postales")
-        
         df_view = df_full.copy()
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
-        
-        # 1. CHECKBOX MAESTRO
-        sel_all = st.checkbox("Seleccionar Todo", value=False, key="sel_all_postales")
-        
-        # 2. INSERTAR COLUMNA "✅" (VISUALMENTE LIMPIO)
+        sel_all = st.checkbox("Seleccionar Todo", key="sel_all_postales")
         df_view.insert(0, "✅", sel_all)
-        
-        # 3. EDITOR DE DATOS
         df_edit = st.data_editor(df_view, hide_index=True)
         sel_idx = df_edit.index[df_edit["✅"]==True].tolist()
         
@@ -296,129 +340,67 @@ else:
                 st.session_state.config["plantillas"][t] = cols[i].selectbox(f"Plantilla '{t}':", archs, index=idx, key=f"pp_{t}")
 
             if st.button("🔥 GENERAR POSTALES", type="primary"):
-                p_bar = st.progress(0); 
-                archivos_generados = [] # LOCAL
-                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, "<<Conhora>>":32, "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28, "<<Confecha>>":32}
-                
+                p_bar = st.progress(0); archivos_generados = []
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
                     orig = st.session_state.raw_data_original[idx]['fields']
-                    try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
-                    except: dt = datetime.now(); nm = "error"
-                    
-                    ft = rec.get('Tipo', 'Sin Tipo')
-                    fs = rec.get('Sucursal', '000')
-                    tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
-                    
-                    tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
+                    dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d')
+                    ft, fs = rec.get('Tipo', 'Sin Tipo'), rec.get('Sucursal', '000')
+                    tfe, tho = obtener_fecha_texto(dt), obtener_hora_texto(rec.get('Hora',''))
+                    tfe_confechor = f"{MESES_ES[dt.month-1].capitalize()} {dt.day} de {dt.year}"
                     fcf = f"{tfe_confechor.strip()}\n{tho.strip()}"
-                    
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
-                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {MESES_ES[dt.month-1]} - {ft}, {fs}")[:120] + ".png"
                     
-                    reps = {
-                        "<<Tipo>>":textwrap.fill(ft,width=35), 
-                        "<<Sucursal>>":fs, 
-                        "<<Seccion>>":rec.get('Seccion'), 
-                        "<<Confechor>>":fcf, 
-                        "<<Concat>>":fcc, 
-                        "<<Consuc>>":fcc,
-                        "<<Confecha>>":tfe,
-                        "<<Conhora>>":tho
-                    }
-                    
-                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
-                    except: continue
-                    if ft == "Actividad en Sucursal" and not orig.get("Lista de asistencia") and len(prs.slides)>=4: prs.slides._sldIdLst.remove(prs.slides._sldIdLst[3])
-
-                    for slide in prs.slides:
-                        for shp in slide.shapes:
-                            if shp.has_text_frame:
-                                for tag in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
-                                    if f"<<{tag}>>" in shp.text_frame.text:
-                                        adj = orig.get(tag)
-                                        if adj:
-                                            try:
+                    try: 
+                        prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
+                        for slide in prs.slides:
+                            for shp in slide.shapes:
+                                if shp.has_text_frame:
+                                    for tag in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
+                                        if f"<<{tag}>>" in shp.text_frame.text:
+                                            adj = orig.get(tag)
+                                            if adj:
                                                 io = procesar_imagen_inteligente(requests.get(adj[0]['url']).content, shp.width, shp.height, con_blur=True)
                                                 slide.shapes.add_picture(io, shp.left, shp.top, shp.width, shp.height)
                                                 shp._element.getparent().remove(shp._element)
-                                            except: pass
-                        for shp in slide.shapes:
-                            if shp.has_text_frame:
-                                for tag, val in reps.items():
-                                    if tag in shp.text_frame.text:
-                                        if tag in ["<<Tipo>>", "<<Sucursal>>"]: shp.top -= Pt(2)
-                                        
-                                        tf = shp.text_frame
-                                        tf.vertical_anchor = MSO_ANCHOR.MIDDLE 
-                                        tf.word_wrap = True
-                                        
-                                        if tag == "<<Confechor>>":
-                                            tf.clear()
-                                            p1 = tf.paragraphs[0]
-                                            p1.text = tfe_confechor.strip()
-                                            p1.alignment = PP_ALIGN.CENTER
-                                            p1.font.bold = True
-                                            p1.font.color.rgb = AZUL
-                                            p1.font.size = Pt(28)
-                                            
-                                            p2 = tf.add_paragraph()
-                                            p2.text = tho.strip()
-                                            p2.alignment = PP_ALIGN.CENTER
-                                            p2.font.bold = True
-                                            p2.font.color.rgb = AZUL
-                                            p2.font.size = Pt(28)
-                                        else:
-                                            bp = tf._element.bodyPr
-                                            for c in ['spAutoFit', 'normAutofit', 'noAutofit']:
-                                                if bp.find(qn(f'a:{c}')) is not None: bp.remove(bp.find(qn(f'a:{c}')))
-                                            if tag=="<<Tipo>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
-                                            else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
-                                            
-                                            tf.clear(); p = tf.paragraphs[0]
-                                            if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
-                                            
-                                            p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                            run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
-                                            run.font.size=Pt(TAM_MAPA.get(tag,12))
-                    
-                    pp_io = BytesIO(); prs.save(pp_io)
-                    dout = generar_pdf(pp_io.getvalue())
-                    if dout:
-                        imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg')
-                        with BytesIO() as b: 
-                            imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True)
-                            fbytes = b.getvalue()
-                        path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Postales/{fs}/{narc}"
-                        archivos_generados.append({"RutaZip":path, "Datos":fbytes})
+                            for shp in slide.shapes:
+                                if shp.has_text_frame:
+                                    reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc, "<<Confecha>>":tfe, "<<Conhora>>":tho}
+                                    for tag, val in reps.items():
+                                        if tag in shp.text_frame.text:
+                                            tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE; tf.word_wrap = True
+                                            if tag == "<<Confechor>>":
+                                                tf.clear()
+                                                p1 = tf.paragraphs[0]; p1.text = tfe_confechor; p1.alignment = PP_ALIGN.CENTER; p1.font.bold = True; p1.font.color.rgb = RGBColor(0,176,240); p1.font.size = Pt(28)
+                                                p2 = tf.add_paragraph(); p2.text = tho; p2.alignment = PP_ALIGN.CENTER; p2.font.bold = True; p2.font.color.rgb = RGBColor(0,176,240); p2.font.size = Pt(28)
+                                            else:
+                                                tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER; run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0,176,240); run.font.size=Pt(12 if tag=="<<Tipo>>" else 32)
+                        
+                        pp_io = BytesIO(); prs.save(pp_io)
+                        dout = generar_pdf(pp_io.getvalue())
+                        if dout:
+                            imgs = convert_from_bytes(dout, dpi=170)
+                            with BytesIO() as b:
+                                imgs[0].save(b, format="JPEG", quality=85, optimize=True)
+                                archivos_generados.append({"RutaZip": f"{dt.year}/Postales/{fs}/{narc}", "Datos": b.getvalue()})
+                    except: pass
                     p_bar.progress((i+1)/len(sel_idx))
                 
-                # BOTÓN DE DESCARGA INMEDIATO
                 if archivos_generados:
                     zb = BytesIO()
                     with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
                         for f in archivos_generados: z.writestr(f["RutaZip"], f["Datos"])
-                    st.success("✅ Generación Completada")
-                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} POSTALES", zb.getvalue(), f"Postales_{datetime.now().strftime('%H%M%S')}.zip", "application/zip", type="primary")
+                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} POSTALES", zb.getvalue(), "Postales.zip", "application/zip", type="primary")
 
-    # --------------------------------------------------------
-    # MÓDULO REPORTES
-    # --------------------------------------------------------
     elif modulo == "Reportes":
         st.subheader("📄 Generador de Reportes")
         df_view = df_full.copy()
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
-        
-        # 1. CHECKBOX MAESTRO
-        sel_all_r = st.checkbox("Seleccionar Todo", value=False, key="sel_all_reportes")
-        
-        # 2. INSERTAR COLUMNA "✅"
+        sel_all_r = st.checkbox("Seleccionar Todo", key="sel_all_reportes")
         df_view.insert(0, "✅", sel_all_r)
-        
-        # 3. EDITOR
-        df_edit = st.data_editor(df_view, hide_index=True, key="ed_r")
+        df_edit = st.data_editor(df_view, hide_index=True)
         sel_idx = df_edit.index[df_edit["✅"]==True].tolist()
         
         if sel_idx:
@@ -433,217 +415,84 @@ else:
                 st.session_state.config["plantillas"][t] = cols[i].selectbox(f"Plantilla '{t}':", archs, index=idx, key=f"pr_{t}")
 
             if st.button("🔥 CREAR REPORTES", type="primary"):
-                p_bar = st.progress(0)
-                archivos_generados = [] # LOCAL
-                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":12, "<<Seccion>>":12, "<<Confecha>>":24, "<<Conhora>>":15, "<<Consuc>>":24, "<<Confechor>>":20, "<<Concat>>":12}
-                
+                p_bar = st.progress(0); archivos_generados = []
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
                     orig = st.session_state.raw_data_original[idx]['fields']
-                    try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
-                    except: dt = datetime.now(); nm = "error"
-                    
-                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
-                    tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
-                    
-                    tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
+                    dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d')
+                    ft, fs = rec.get('Tipo', 'Sin Tipo'), rec.get('Sucursal', '000')
+                    tfe, tho = obtener_fecha_texto(dt), obtener_hora_texto(rec.get('Hora',''))
+                    tfe_confechor = f"{MESES_ES[dt.month-1].capitalize()} {dt.day} de {dt.year}"
                     fcf = f"{tfe_confechor.strip()}\n{tho.strip()}"
-                    
-                    fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
-                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {MESES_ES[dt.month-1]} - {ft}, {fs}")[:120] + ".pdf"
                     
-                    reps = {
-                        "<<Tipo>>":textwrap.fill(ft,width=35), 
-                        "<<Sucursal>>":fs, 
-                        "<<Seccion>>":rec.get('Seccion'), 
-                        "<<Confecha>>":tfe, 
-                        "<<Conhora>>":tho, 
-                        "<<Consuc>>":fcs,
-                        "<<Confechor>>":fcf,
-                        "<<Concat>>":fcc
-                    }
-                    
-                    try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
-                    except: continue
-                    if ft == "Actividad en Sucursal" and not orig.get("Lista de asistencia") and len(prs.slides)>=4: prs.slides._sldIdLst.remove(prs.slides._sldIdLst[3])
-
-                    for slide in prs.slides:
-                        for shp in slide.shapes:
-                            if shp.has_text_frame:
-                                for tag in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
-                                    if f"<<{tag}>>" in shp.text_frame.text:
-                                        adj = orig.get(tag)
-                                        if adj:
-                                            try:
+                    try:
+                        prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
+                        for slide in prs.slides:
+                            for shp in slide.shapes:
+                                if shp.has_text_frame:
+                                    for tag in ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Foto 06", "Foto 07", "Reporte firmado", "Lista de asistencia"]:
+                                        if f"<<{tag}>>" in shp.text_frame.text:
+                                            adj = orig.get(tag)
+                                            if adj:
                                                 io = procesar_imagen_inteligente(requests.get(adj[0]['url']).content, shp.width, shp.height, con_blur=True)
                                                 slide.shapes.add_picture(io, shp.left, shp.top, shp.width, shp.height)
                                                 shp._element.getparent().remove(shp._element)
-                                            except: pass
-                        for shp in slide.shapes:
-                            if shp.has_text_frame:
-                                for tag, val in reps.items():
-                                    if tag in shp.text_frame.text:
-                                        if tag in ["<<Tipo>>", "<<Sucursal>>"]: shp.top -= Pt(2)
-                                        
-                                        tf = shp.text_frame
-                                        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                        tf.word_wrap = True
-                                        
-                                        if tag == "<<Confechor>>":
-                                            tf.clear()
-                                            p1 = tf.paragraphs[0]
-                                            p1.text = tfe_confechor.strip()
-                                            p1.alignment = PP_ALIGN.CENTER
-                                            p1.font.bold = True
-                                            p1.font.color.rgb = AZUL
-                                            p1.font.size = Pt(20)
-                                            
-                                            p2 = tf.add_paragraph()
-                                            p2.text = tho.strip()
-                                            p2.alignment = PP_ALIGN.CENTER
-                                            p2.font.bold = True
-                                            p2.font.color.rgb = AZUL
-                                            p2.font.size = Pt(20)
-                                        else:
-                                            bp = tf._element.bodyPr
-                                            for c in ['spAutoFit', 'normAutofit', 'noAutofit']:
-                                                if bp.find(qn(f'a:{c}')) is not None: bp.remove(bp.find(qn(f'a:{c}')))
-                                            if tag=="<<Tipo>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
-                                            elif tag=="<<Conhora>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
-                                            else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
-                                            
-                                            tf.clear(); p = tf.paragraphs[0]
-                                            if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
-                                            
-                                            p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                            run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
-                                            run.font.size=Pt(TAM_MAPA.get(tag,12))
-                    
-                    pp_io = BytesIO(); prs.save(pp_io)
-                    dout = generar_pdf(pp_io.getvalue())
-                    if dout:
-                        path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Reportes/{fs}/{narc}"
-                        archivos_generados.append({"RutaZip":path, "Datos":dout})
+                            for shp in slide.shapes:
+                                if shp.has_text_frame:
+                                    reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc, "<<Confecha>>":tfe, "<<Conhora>>":tho}
+                                    for tag, val in reps.items():
+                                        if tag in shp.text_frame.text:
+                                            tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE; tf.word_wrap = True
+                                            if tag == "<<Confechor>>":
+                                                tf.clear()
+                                                p1 = tf.paragraphs[0]; p1.text = tfe_confechor; p1.alignment = PP_ALIGN.CENTER; p1.font.bold = True; p1.font.color.rgb = RGBColor(0,176,240); p1.font.size = Pt(20)
+                                                p2 = tf.add_paragraph(); p2.text = tho; p2.alignment = PP_ALIGN.CENTER; p2.font.bold = True; p2.font.color.rgb = RGBColor(0,176,240); p2.font.size = Pt(20)
+                                            else:
+                                                tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER; run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0,176,240); run.font.size=Pt(12 if tag=="<<Tipo>>" else 24)
+                        
+                        pp_io = BytesIO(); prs.save(pp_io)
+                        dout = generar_pdf(pp_io.getvalue())
+                        if dout: archivos_generados.append({"RutaZip": f"{dt.year}/Reportes/{fs}/{narc}", "Datos": dout})
+                    except: pass
                     p_bar.progress((i+1)/len(sel_idx))
                 
-                # BOTÓN DE DESCARGA INMEDIATO
                 if archivos_generados:
                     zb = BytesIO()
                     with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
                         for f in archivos_generados: z.writestr(f["RutaZip"], f["Datos"])
-                    st.success("✅ Generación Completada")
-                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} REPORTES", zb.getvalue(), f"Reportes_{datetime.now().strftime('%H%M%S')}.zip", "application/zip", type="primary")
+                    st.download_button(f"⬇️ DESCARGAR {len(archivos_generados)} REPORTES", zb.getvalue(), "Reportes.zip", "application/zip", type="primary")
 
-    # --------------------------------------------------------
-    # MÓDULO CALENDARIO
-    # --------------------------------------------------------
     elif modulo == "Calendario":
         st.subheader("📅 Calendario de Actividades")
-        
-        if 'todas_tablas' in st.session_state:
-            nombres_tablas = list(st.session_state['todas_tablas'].keys())
-            idx_actual = 0
-            if 'tabla_actual_nombre' in st.session_state and st.session_state['tabla_actual_nombre'] in nombres_tablas:
-                idx_actual = nombres_tablas.index(st.session_state['tabla_actual_nombre'])
-            
-            with st.expander("📅 Cambiar Mes (Tabla)", expanded=False):
-                # CARGA AUTOMATICA
-                nueva_tabla = st.radio("Meses:", nombres_tablas, index=idx_actual, horizontal=True)
-            
-            if nueva_tabla != st.session_state.get('tabla_actual_nombre'):
-                with st.spinner(f"Cargando {nueva_tabla}..."):
-                    base_id = st.session_state['base_activa_id']
-                    table_id = st.session_state['todas_tablas'][nueva_tabla]
-                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_id}/{table_id}", headers=headers)
-                    recs = r_reg.json().get("records", [])
-                    st.session_state.raw_data_original = recs
-                    st.session_state.raw_records = [
-                        {'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}}
-                        for r in recs
-                    ]
-                    st.session_state['tabla_actual_nombre'] = nueva_tabla
-                st.rerun()
-
-        st.divider()
-
         fechas_oc = {}
-        fechas_lista = []
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
                 f_short = f.split('T')[0]
                 if f_short not in fechas_oc: fechas_oc[f_short] = []
-                th = None
-                if 'Postal' in r['fields']:
-                    att = r['fields']['Postal']
-                    if isinstance(att, list) and len(att)>0: 
-                        th = att[0].get('url') 
-                fechas_oc[f_short].append({"id":r['id'], "thumb":th})
-                fechas_lista.append(f_short)
-
-        if not fechas_oc:
-            st.warning("No hay fechas en esta tabla.")
-        else:
-            dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
-            mc = Counter([(d.year, d.month) for d in dt_objs])
+                th = r['fields']['Postal'][0].get('url') if 'Postal' in r['fields'] else None
+                fechas_oc[f_short].append({"thumb": th, "raw_fields": r['fields']})
+        
+        if fechas_oc:
+            dt_list = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_oc.keys()]
+            mc = Counter([(d.year, d.month) for d in dt_list])
             ay, am = mc.most_common(1)[0][0]
-            
-            cal = calendar.Calendar(firstweekday=0) 
-            weeks = cal.monthdayscalendar(ay, am)
-            
-            st.markdown("""
-            <style>
-            .cal-title {
-                text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
-            }
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
-            .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-            .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-            .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
-            .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
-            .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
-            .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
-            
-            @media (max-width: 600px) {
-                .c-cell { height: 110px; }
-                .c-day { font-size: 0.9em; }
-                .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; }
-            }
-            </style>
-            """, unsafe_allow_html=True)
-
-            h = f"<div class='cal-title'>📅 {MESES_ES[am-1].capitalize()} {ay}</div>"
-            h += "<div class='c-grid'>"
-            for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
-            
+            st.markdown(f"<div class='cal-title'>📅 {MESES_ES[am-1].capitalize()} {ay}</div>", unsafe_allow_html=True)
+            weeks = calendar.Calendar(0).monthdayscalendar(ay, am)
+            cols = st.columns(7)
+            for i, d in enumerate(["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]): cols[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
             for wk in weeks:
-                for d in wk:
-                    if d == 0: h += "<div class='c-cell' style='border:none; background:transparent;'></div>"
-                    else:
-                        k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
-                        acts = fechas_oc.get(k, [])
-                        
-                        h += f"<div class='c-cell'>"
-                        
-                        # HEADER
-                        h += f"<div class='c-day'>{d}</div>"
-                        
-                        # BODY
-                        style_bg = ""
-                        if acts and acts[0]['thumb']:
-                            style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
-                        h += f"<div class='c-body' {style_bg}></div>"
-                        
-                        # FOOTER LOGIC
-                        if len(acts) > 1:
-                            h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
-                        elif len(acts) == 1:
-                            h += f"<div class='c-foot'>&nbsp;</div>"
+                cols = st.columns(7)
+                for i, d in enumerate(wk):
+                    with cols[i]:
+                        if d == 0: st.markdown("<div style='height:160px;'></div>", unsafe_allow_html=True)
                         else:
-                            h += f"<div class='c-foot-empty'></div>"
-                        
-                        h += "</div>"
-            h += "</div>"
-            st.markdown(h, unsafe_allow_html=True)
+                            k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
+                            acts = fechas_oc.get(k, [])
+                            bg = f"background-image: url('{acts[0]['thumb']}');" if acts and acts[0]['thumb'] else ""
+                            st.markdown(f"<div class='c-cell' style='height:120px; border-bottom:0;'><div class='c-day'>{d}</div><div class='c-body' style='{bg}'></div></div>", unsafe_allow_html=True)
+                            if acts:
+                                if st.button(f"🔍 Ver ({len(acts)})", key=f"v_{k}", use_container_width=True): mostrar_detalles_dia(acts, k)
+                            else: st.markdown("<div style='height:37px; background:#f0f0f0;'></div>", unsafe_allow_html=True)
