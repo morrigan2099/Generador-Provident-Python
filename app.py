@@ -140,9 +140,9 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v117", layout="wide")
+st.set_page_config(page_title="Provident Pro v118", layout="wide")
 
-# 1. BLOQUEO TECLADO (JS)
+# 1. BLOQUEO TECLADO (JS) - Útil y no afecta el diseño
 st.markdown("""
 <script>
     const observer = new MutationObserver((mutations) => {
@@ -158,92 +158,89 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS "BLINDADOS"
+# 2. ESTILOS CSS - SOLO CALENDARIO (Todo lo demás será nativo de Streamlit)
 st.markdown("""
 <style>
-    /* ========== 1. APP GLOBAL: TEMA CLARO FORZADO ========== */
-    :root { color-scheme: light; }
-    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
-    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
+    /* CALENDARIO ESTILOS */
+    /* Estos estilos solo afectan a la tabla HTML creada manualmente */
+    /* Se usa !important para asegurar que estos colores prevalezcan sobre cualquier tema */
     
-    /* Textos Generales (Negro) */
-    p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
-
-    /* ========== 2. EXPANDERS (BICOLOR & BLINDADOS) ========== */
-    /* Header (Gris Oscuro, Texto Blanco) - Para TODOS los estados (hover, active, focus) */
-    .streamlit-expanderHeader, 
-    .streamlit-expanderHeader:hover, 
-    .streamlit-expanderHeader:focus, 
-    .streamlit-expanderHeader:active {
-        background-color: #262730 !important; 
-        color: #ffffff !important; 
-        font-weight: bold !important;
-        border-radius: 4px;
-        margin-bottom: 5px;
-    }
-    
-    /* Texto interno del Header (La clave para que no se ponga negro al tocar) */
-    .streamlit-expanderHeader p, 
-    .streamlit-expanderHeader:hover p,
-    .streamlit-expanderHeader:focus p,
-    .streamlit-expanderHeader:active p { 
-        color: #ffffff !important; 
-    }
-    
-    /* Icono SVG del Header */
-    .streamlit-expanderHeader svg,
-    .streamlit-expanderHeader:hover svg {
-        fill: #ffffff !important;
-        color: #ffffff !important;
-    }
-    
-    /* Content (Blanco, Texto Negro) */
-    .streamlit-expanderContent {
-        background-color: #ffffff !important; 
-        color: #000000 !important;
-        border: 1px solid #ddd;
-        border-radius: 0 0 4px 4px;
-        padding: 10px;
-    }
-    .streamlit-expanderContent label p {
-        color: #000000 !important; 
-    }
-    
-    /* ========== 3. RADIO BUTTONS (ELIMINAR NARANJA) ========== */
-    div[role="radiogroup"] div[role="radio"] > div:first-child {
-        border-color: #00b0f0 !important;
-        background-color: transparent !important;
-    }
-    div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child {
-        background-color: #00b0f0 !important;
-        border-color: #00b0f0 !important;
-    }
-    
-    /* ========== 4. BOTONES ========== */
-    div.stButton > button {
-        background-color: #002060 !important;
-        color: #ffffff !important;
+    .cal-title {
+        text-align: center;
+        font-size: 1.5em;
         font-weight: bold;
-        border: none;
+        margin: 0 !important;
+        padding-bottom: 10px;
+        color: #333 !important; /* Título siempre gris oscuro */
+        background-color: #fff !important; /* Fondo título blanco */
+        border-radius: 4px;
     }
-    div.stButton > button p { color: #ffffff !important; }
-
-    /* ========== 5. TABLAS ========== */
-    [data-testid="stDataFrameResizable"] th {
-        background-color: #00b0f0 !important;
-        color: #ffffff !important;
+    
+    .c-grid { 
+        display: grid; 
+        grid-template-columns: repeat(7, 1fr); 
+        gap: 2px; 
+        margin-top: 0px !important; 
     }
-    [data-testid="stDataFrameResizable"] th div { color: #ffffff !important; }
-
-    /* ========== 6. CALENDARIO ========== */
-    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff; }
-    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
-    .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
-    .c-cell { background: white !important; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-    .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
-    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
-    .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
-    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
+    
+    .c-head { 
+        background: #002060 !important; /* Azul Oscuro */
+        color: white !important; 
+        padding: 4px; 
+        text-align: center; 
+        font-weight: bold; 
+        border-radius: 2px; 
+        font-size: 14px; 
+    }
+    
+    .c-cell { 
+        background: white !important; 
+        border: 1px solid #ccc !important; 
+        border-radius: 2px; 
+        height: 160px; 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: space-between; 
+        overflow: hidden; 
+    }
+    
+    .c-day { 
+        flex: 0 0 auto; 
+        background: #00b0f0 !important; /* Celeste */
+        color: white !important; 
+        font-weight: 900; 
+        font-size: 1.1em; 
+        text-align: center; 
+        padding: 2px 0; 
+    }
+    
+    .c-body { 
+        flex-grow: 1; 
+        width: 100%; 
+        background-position: center; 
+        background-repeat: no-repeat; 
+        background-size: cover; 
+        background-color: #f8f8f8 !important; 
+    }
+    
+    .c-foot { 
+        flex: 0 0 auto; 
+        height: 20px; 
+        background: #002060 !important; /* Azul Oscuro */
+        color: #ffffff !important; 
+        font-weight: 900; 
+        text-align: center; 
+        font-size: 0.9em; 
+        padding: 1px; 
+        white-space: nowrap; 
+        overflow: hidden; 
+    }
+    
+    .c-foot-empty { 
+        flex: 0 0 auto; 
+        height: 20px; 
+        background: #e0e0e0 !important; /* Gris */
+    }
     
     @media (max-width: 600px) {
         .c-cell { height: 110px; }
@@ -258,7 +255,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v117")
+st.title("🚀 Generador Pro v118")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -269,6 +266,7 @@ with st.sidebar:
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         
+        # Uso nativo pero encapsulado en expander para limpieza visual
         with st.expander("📂 Seleccionar Base", expanded=True):
             base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
         
@@ -309,8 +307,7 @@ if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    AZUL = RGBColor(0, 176, 240)
-
+    
     # --------------------------------------------------------
     # MÓDULO POSTALES
     # --------------------------------------------------------
@@ -388,7 +385,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confechor>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -478,7 +475,7 @@ else:
                                         tf.clear(); p = tf.paragraphs[0]
                                         if tag in ["<<Confecha>>", "<<Conhora>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
-                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
+                                        run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=RGBColor(0, 176, 240)
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
                     
                     pp_io = BytesIO(); prs.save(pp_io)
@@ -531,7 +528,6 @@ else:
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: 
-                        # URL ORIGINAL
                         th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
@@ -589,7 +585,7 @@ else:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # FOOTER LOGIC (REVISADO)
+                        # FOOTER LOGIC
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
