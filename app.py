@@ -140,7 +140,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v113", layout="wide")
+st.set_page_config(page_title="Provident Pro v114", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -158,87 +158,69 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS AGRESIVOS (ANTI MODO OSCURO + COLORES FIJOS)
+# 2. ESTILOS CSS AGRESIVOS (Tema Oscuro para Desplegables / Claro para App)
 st.markdown("""
 <style>
-    /* 1. FORZAR MODO CLARO EN EL NAVEGADOR */
-    :root {
-        color-scheme: light;
-    }
+    /* ========== 1. APP GLOBAL: TEMA CLARO ========== */
+    :root { color-scheme: light; }
+    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
+    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
     
-    /* 2. CONTENEDORES PRINCIPALES */
-    [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .stApp {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-    }
-    
-    /* 3. TEXTOS GENERALES (Asegurar negro sobre blanco) */
-    p, label, span, div, h1, h2, h3, h4, h5, h6, li {
-        color: #000000 !important;
-    }
-    
-    /* 4. SIDEBAR ESPECÍFICO */
-    [data-testid="stSidebar"] {
-        background-color: #f8f9fa !important;
-        border-right: 1px solid #ddd;
-    }
-    
-    /* 5. BOTONES (Azul Oscuro / Blanco) */
-    div.stButton > button {
-        background-color: #002060 !important;
-        color: #ffffff !important;
-        border: none;
+    /* Textos Generales (Negro) */
+    p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
+
+    /* ========== 2. EXPANDERS (VENTANAS DESPLEGABLES) OSCURAS ========== */
+    /* Cabecera del Expander */
+    .streamlit-expanderHeader {
+        background-color: #262730 !important; /* Gris Oscuro */
+        color: #ffffff !important; /* Texto Blanco */
+        font-weight: bold !important;
         border-radius: 4px;
-        font-weight: bold;
+        margin-bottom: 5px;
     }
-    div.stButton > button:hover {
-        background-color: #00b0f0 !important; /* Celeste al pasar mouse */
-        color: #ffffff !important;
+    .streamlit-expanderHeader p { color: #ffffff !important; } /* Forzar P blanco */
+    
+    /* Contenido del Expander */
+    .streamlit-expanderContent {
+        background-color: #262730 !important; /* Gris Oscuro */
+        color: #ffffff !important; /* Texto Blanco */
+        border: 1px solid #444;
+        border-radius: 0 0 4px 4px;
     }
-    div.stButton > button p {
-        color: #ffffff !important; /* Texto interno del botón blanco */
+    /* Texto DENTRO del Expander (Radio options) */
+    .streamlit-expanderContent label p {
+        color: #ffffff !important; /* BLANCO */
     }
     
-    /* 6. RADIO BUTTONS (Eliminar Naranja, Poner Celeste) */
-    /* Texto de las opciones */
-    div[role="radiogroup"] label p {
-        color: #000000 !important;
+    /* ========== 3. RADIO BUTTONS (ELIMINAR NARANJA) ========== */
+    /* Círculo Exterior (Sin seleccionar) */
+    div[role="radiogroup"] div[role="radio"] > div:first-child {
+        border-color: #00b0f0 !important; /* Borde Celeste */
+        background-color: transparent !important;
     }
-    /* Círculo seleccionado */
-    div[role="radiogroup"] div[data-checked="true"] {
+    /* Círculo Seleccionado (Relleno) */
+    div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child {
         background-color: #00b0f0 !important; /* Relleno Celeste */
         border-color: #00b0f0 !important;
     }
-    /* Círculo externo del seleccionado (a veces Streamlit usa dos divs) */
-    div[role="radiogroup"] div[data-checked="true"] > div {
-        background-color: #00b0f0 !important;
-    }
     
-    /* 7. EXPANDERS */
-    .streamlit-expanderHeader {
-        background-color: #ffffff !important;
-        color: #002060 !important; /* Título azul oscuro */
+    /* ========== 4. BOTONES ========== */
+    div.stButton > button {
+        background-color: #002060 !important;
+        color: #ffffff !important;
         font-weight: bold;
+        border: none;
     }
-    .streamlit-expanderHeader p {
-        color: #002060 !important;
-    }
-    
-    /* 8. TABLAS (Headers Celestes) */
+    div.stButton > button p { color: #ffffff !important; }
+
+    /* ========== 5. TABLAS ========== */
     [data-testid="stDataFrameResizable"] th {
         background-color: #00b0f0 !important;
         color: #ffffff !important;
     }
-    [data-testid="stDataFrameResizable"] th div {
-        color: #ffffff !important;
-    }
-    
-    /* 9. EXCEPCIONES PARA EL CALENDARIO (Para que el CSS interno funcione) */
-    .c-head, .c-day, .c-foot, .c-foot-empty {
-        color: #ffffff !important; /* Texto blanco forzado en componentes oscuros */
-    }
-    
-    /* ESTILOS DEL CALENDARIO (Pegados aquí para referencia global) */
+    [data-testid="stDataFrameResizable"] th div { color: #ffffff !important; }
+
+    /* ========== 6. CALENDARIO ========== */
     .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff; }
     .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
     .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
@@ -261,7 +243,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v113")
+st.title("🚀 Generador Pro v114")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -312,7 +294,8 @@ if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-    
+    AZUL = RGBColor(0, 176, 240)
+
     # --------------------------------------------------------
     # MÓDULO POSTALES
     # --------------------------------------------------------
@@ -533,6 +516,7 @@ else:
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: 
+                        # URL ORIGINAL
                         th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
@@ -547,6 +531,27 @@ else:
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
+            st.markdown("""
+            <style>
+            .cal-title {
+                text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
+            }
+            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
+            .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+            .c-cell { background: white !important; border: 1px solid #ccc; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+            .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+            .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8 !important; }
+            .c-foot { flex: 0 0 auto; height: 20px; background: #002060 !important; color: #ffffff !important; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+            .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0 !important; }
+            
+            @media (max-width: 600px) {
+                .c-cell { height: 110px; }
+                .c-day { font-size: 0.9em; }
+                .c-foot, .c-foot-empty { font-size: 0.7em; height: 16px; }
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
             h = f"<div class='cal-title'>📅 {MESES_ES[am-1].capitalize()} {ay}</div>"
             h += "<div class='c-grid'>"
             for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
@@ -569,7 +574,7 @@ else:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # FOOTER LOGIC
+                        # FOOTER LOGIC (REVISADO)
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
