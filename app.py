@@ -140,14 +140,14 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v100", layout="wide")
+st.set_page_config(page_title="Provident Pro v101", layout="wide")
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v100 - Final Completo")
+st.title("🚀 Generador Pro v101 - Nativo")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -206,7 +206,7 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- RESTAURADO: TABLA DE DATOS ---
+        # --- TABLA DE DATOS ---
         if 'sa_p' not in st.session_state: st.session_state.sa_p = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo"): st.session_state.sa_p=True; st.rerun()
@@ -242,7 +242,6 @@ else:
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
-                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -296,7 +295,7 @@ else:
         for c in df_view.columns:
             if isinstance(df_view[c].iloc[0], list): df_view.drop(c, axis=1, inplace=True)
         
-        # --- RESTAURADO: TABLA DE DATOS ---
+        # --- TABLA DE DATOS ---
         if 'sa_r' not in st.session_state: st.session_state.sa_r = False
         c1,c2,_=st.columns([1,1,5])
         if c1.button("✅ Todo", key="r1"): st.session_state.sa_r=True; st.rerun()
@@ -331,7 +330,6 @@ else:
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".pdf"
-                    
                     reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confecha>>":tfe, "<<Conhora>>":tho, "<<Consuc>>":fcs}
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
@@ -376,11 +374,12 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (ESTRUCTURA HTML TABLE INDESTRUCTIBLE)
+    # MÓDULO CALENDARIO (NATIVO STREAMLIT)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario Visual":
         st.subheader("📅 Calendario de Actividades")
         
+        # 1. Selector de Tabla
         if 'todas_tablas' in st.session_state:
             nombres_tablas = list(st.session_state['todas_tablas'].keys())
             idx_actual = 0
@@ -404,18 +403,18 @@ else:
 
         st.divider()
 
+        # 2. Procesar Fechas
         fechas_oc = {}
         fechas_lista = []
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
-                # Normalizar YYYY-MM-DD
                 f_short = f.split('T')[0]
                 if f_short not in fechas_oc: fechas_oc[f_short] = []
                 th = None
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
-                    if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('small',{}).get('url')
+                    if isinstance(att, list) and len(att)>0: th = att[0].get('thumbnails',{}).get('large',{}).get('url')
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
 
@@ -424,102 +423,47 @@ else:
         if not fechas_oc:
             st.warning("No hay fechas en esta tabla.")
         else:
-            # Auto-detectar año/mes
-            fechas_dt_list = [datetime.strptime(f, '%Y-%m-%d') for f in fechas_lista]
-            meses_counter = Counter([(d.year, d.month) for d in fechas_dt_list])
-            anio_cal, mes_cal = meses_counter.most_common(1)[0][0]
+            # Auto-detectar Mes/Año
+            dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
+            mc = Counter([(d.year, d.month) for d in dt_objs])
+            ay, am = mc.most_common(1)[0][0]
             
-            st.markdown(f"**Visualizando: {MESES_ES[mes_cal-1].capitalize()} {anio_cal}**")
+            st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
 
-            # TABLA HTML INDESTRUCTIBLE
+            # 3. DIBUJAR CALENDARIO (COMPONENTES NATIVOS)
             cal = calendar.Calendar(firstweekday=0) 
-            weeks = cal.monthdayscalendar(anio_cal, mes_cal)
+            weeks = cal.monthdayscalendar(ay, am)
             
-            html = """
-            <style>
-                .cal-table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; table-layout: fixed; }
-                .cal-th { background-color: #f0f2f6; color: #000; font-weight: bold; text-align: center; padding: 5px; border: 1px solid #ddd; }
-                .cal-td { 
-                    border: 1px solid #ddd; 
-                    height: 140px; 
-                    vertical-align: top; 
-                    padding: 0; 
-                    background-color: #fff !important; 
-                    position: relative; 
-                }
-                .cal-day-header {
-                    background-color: #f9f9f9;
-                    color: #000 !important;
-                    font-weight: 900;
-                    font-size: 16px;
-                    padding: 2px 5px;
-                    border-bottom: 1px solid #eee;
-                }
-                .cal-body {
-                    height: 90px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    overflow: hidden;
-                    background-color: #fff;
-                }
-                .cal-img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                }
-                .cal-footer {
-                    background-color: #fff0f0;
-                    color: #D80000 !important;
-                    font-weight: bold;
-                    text-align: center;
-                    font-size: 14px;
-                    padding: 2px;
-                    border-top: 1px solid #ffcccc;
-                }
-                .no-img { color: #ccc; font-size: 12px; }
-            </style>
-            <table class='cal-table'>
-                <thead>
-                    <tr>
-                        <th class='cal-th'>LUN</th><th class='cal-th'>MAR</th><th class='cal-th'>MIÉ</th>
-                        <th class='cal-th'>JUE</th><th class='cal-th'>VIE</th><th class='cal-th'>SÁB</th>
-                        <th class='cal-th'>DOM</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
+            # Cabecera
+            cols = st.columns(7)
+            for i, d in enumerate(["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]):
+                cols[i].markdown(f"<div style='text-align:center; font-weight:bold; background:#eee;'>{d}</div>", unsafe_allow_html=True)
             
+            # Semanas
             for week in weeks:
-                html += "<tr>"
-                for day in week:
-                    if day == 0:
-                        html += "<td class='cal-td' style='background-color: #f4f4f4 !important;'></td>"
-                    else:
-                        f_key = f"{anio_cal}-{str(mes_cal).zfill(2)}-{str(day).zfill(2)}"
-                        acts = fechas_oc.get(f_key, [])
-                        
-                        # 1. HEADER
-                        cell = f"<div class='cal-day-header'>{day}</div>"
-                        
-                        # 2. BODY
-                        cell += "<div class='cal-body'>"
-                        if acts:
-                            if acts[0]['thumb']:
-                                cell += f"<img src='{acts[0]['thumb']}' class='cal-img'>"
+                with st.container():
+                    cols = st.columns(7)
+                    for i, day in enumerate(week):
+                        with cols[i]:
+                            if day != 0:
+                                st.markdown(f"**{day}**") # HEADER
+                                
+                                k = f"{ay}-{str(am).zfill(2)}-{str(day).zfill(2)}"
+                                acts = fechas_oc.get(k, [])
+                                
+                                if acts:
+                                    if acts[0]['thumb']:
+                                        st.image(acts[0]['thumb'], use_container_width=True) # BODY
+                                    else:
+                                        st.caption("Sin postal")
+                                    
+                                    if len(acts) > 1:
+                                        st.error(f"+ {len(acts)-1} más") # FOOTER
+                                else:
+                                    st.write("") 
                             else:
-                                cell += "<span class='no-img'>Sin foto</span>"
-                        cell += "</div>"
-                        
-                        # 3. FOOTER
-                        if len(acts) > 1:
-                            cell += f"<div class='cal-footer'>+ {len(acts)-1} más</div>"
-                        
-                        html += f"<td class='cal-td'>{cell}</td>"
-                html += "</tr>"
-            
-            html += "</tbody></table>"
-            st.markdown(html, unsafe_allow_html=True)
+                                st.write("") 
+                st.divider()
 
     # --- DESCARGAS ---
     if modulo in ["📮 Postales", "📄 Reportes"] and "archivos_en_memoria" in st.session_state and len(st.session_state.archivos_en_memoria)>0:
