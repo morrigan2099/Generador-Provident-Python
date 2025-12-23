@@ -126,7 +126,6 @@ def obtener_hora_texto(hora_str):
 
 def obtener_concat_texto(record):
     parts = []
-    # Definir variables primero
     val_punto = record.get('Punto de reunion')
     val_ruta = record.get('Ruta a seguir')
     val_mun = record.get('Municipio')
@@ -142,7 +141,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v120", layout="wide")
+st.set_page_config(page_title="Provident Pro v121", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -187,7 +186,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v120")
+st.title("🚀 Generador Pro v121")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -272,7 +271,12 @@ else:
 
             if st.button("🔥 GENERAR POSTALES", type="primary"):
                 p_bar = st.progress(0); st.session_state.archivos_en_memoria = []
-                TAM_MAPA = {"<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, "<<Conhora>>":32, "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28}
+                # RESTAURADO: Configuración completa de variables
+                TAM_MAPA = {
+                    "<<Tipo>>":12, "<<Sucursal>>":44, "<<Seccion>>":12, 
+                    "<<Conhora>>":32, "<<Confecha>>":32, # RESTAURADOS
+                    "<<Concat>>":32, "<<Consuc>>":32, "<<Confechor>>":28
+                }
                 
                 for i, idx in enumerate(sel_idx):
                     rec = st.session_state.raw_records[idx]['fields']
@@ -280,14 +284,25 @@ else:
                     try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
                     except: dt = datetime.now(); nm = "error"
                     
-                    ft = rec.get('Tipo', 'Sin Tipo') # FIXED: Variable ft
+                    ft = rec.get('Tipo', 'Sin Tipo')
                     fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
-                    reps = {"<<Tipo>>":textwrap.fill(ft,width=35), "<<Sucursal>>":fs, "<<Seccion>>":rec.get('Seccion'), "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc}
+                    
+                    # RESTAURADO: Diccionario reps completo
+                    reps = {
+                        "<<Tipo>>":textwrap.fill(ft,width=35), 
+                        "<<Sucursal>>":fs, 
+                        "<<Seccion>>":rec.get('Seccion'), 
+                        "<<Confechor>>":fcf, 
+                        "<<Concat>>":fcc, 
+                        "<<Consuc>>":fcc,
+                        "<<Confecha>>":tfe, # Individual
+                        "<<Conhora>>":tho   # Individual
+                    }
                     
                     try: prs = Presentation(os.path.join(folder, st.session_state.config["plantillas"][ft]))
                     except: continue
@@ -316,7 +331,11 @@ else:
                                         if tag=="<<Tipo>>": bp.append(tf._element.makeelement(qn('a:spAutoFit')))
                                         else: bp.append(tf._element.makeelement(qn('a:normAutofit')))
                                         tf.clear(); p = tf.paragraphs[0]
-                                        if tag in ["<<Confechor>>", "<<Consuc>>"]: p.alignment = PP_ALIGN.CENTER
+                                        
+                                        # RESTAURADO: Alineación centrada para todos los tags de info
+                                        if tag in ["<<Confechor>>", "<<Consuc>>", "<<Confecha>>", "<<Conhora>>"]: 
+                                            p.alignment = PP_ALIGN.CENTER
+                                            
                                         p.space_before=Pt(0); p.space_after=Pt(0); p.line_spacing=1.0
                                         run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL
                                         run.font.size=Pt(TAM_MAPA.get(tag,12))
@@ -324,14 +343,11 @@ else:
                     pp_io = BytesIO(); prs.save(pp_io)
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
-                        imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg') # DPI balanceado
+                        imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg')
                         with BytesIO() as b: 
-                            # OPTIMIZACION DE IMAGEN < 1MB
                             imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True)
                             fbytes = b.getvalue()
-                        
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Postales/{fs}/{narc}"
-                        # FIXED: Usar variable ft
                         st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs, "Tipo":ft})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
@@ -375,7 +391,7 @@ else:
                     try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
                     except: dt = datetime.now(); nm = "error"
                     
-                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000') # FIXED: Variable ft
+                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
@@ -420,7 +436,6 @@ else:
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Reportes/{fs}/{narc}"
-                        # FIXED: Usar variable ft
                         st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs, "Tipo":ft})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
@@ -467,7 +482,6 @@ else:
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: 
-                        # URL ORIGINAL
                         th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
