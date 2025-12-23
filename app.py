@@ -141,23 +141,18 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v126", layout="wide")
+st.set_page_config(page_title="Provident Pro v127", layout="wide")
 
-# 0. GESTIÓN DE NAVEGACIÓN PERSISTENTE (Query Params)
-# Recuperar vista de URL o usar default
+# 0. NAVEGACIÓN PERSISTENTE
 if 'active_module' not in st.session_state:
-    # Intenta leer de la URL
     qp = st.query_params.get("view", "Calendario") 
     st.session_state.active_module = qp
 
-# Función para navegar y actualizar URL
 def navegar_a(modulo):
     st.session_state.active_module = modulo
     st.query_params["view"] = modulo
-    # No es necesario st.rerun() porque el botón ya gatilla el rerun, 
-    # pero aseguramos que la variable se guarde.
 
-# 1. BLOQUEO TECLADO (JS)
+# 1. BLOQUEO TECLADO
 st.markdown("""
 <script>
     const observer = new MutationObserver((mutations) => {
@@ -173,71 +168,14 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS (TEMA CLARO + BOTONES NAV)
+# 2. ESTILOS CSS - ÚNICAMENTE CALENDARIO
+# Todo lo demás usa los estilos por defecto de Streamlit (Botones naranjas, fondos default, etc)
 st.markdown("""
 <style>
-    /* TEMA CLARO GLOBAL */
-    :root { color-scheme: light; }
-    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
-    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
-    
-    /* Textos Generales */
-    p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
-
-    /* BOTONES DE NAVEGACIÓN (Primario = Activo, Secundario = Inactivo) */
-    
-    /* Botón Activo (Primary) -> Celeste */
-    div.stButton > button[kind="primary"] {
-        background-color: #00b0f0 !important; /* CELESTE */
-        color: #ffffff !important;
-        font-weight: bold;
-        border: none;
+    /* CALENDARIO PERSONALIZADO (AZUL CORPORATIVO) */
+    .cal-title {
+        text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
     }
-    
-    /* Botón Inactivo (Secondary) -> Azul Oscuro */
-    div.stButton > button[kind="secondary"] {
-        background-color: #002060 !important; /* AZUL OSCURO */
-        color: #ffffff !important;
-        font-weight: bold;
-        border: none;
-    }
-    
-    /* Hover para todos */
-    div.stButton > button:hover {
-        opacity: 0.9;
-    }
-    
-    /* Texto interno de botones */
-    div.stButton > button p { color: #ffffff !important; }
-
-    /* EXPANDERS */
-    .streamlit-expanderHeader {
-        background-color: #262730 !important; 
-        color: #ffffff !important; 
-        font-weight: bold !important;
-        border-radius: 4px;
-        margin-bottom: 5px;
-    }
-    .streamlit-expanderHeader p, .streamlit-expanderHeader svg { color: #ffffff !important; fill: #ffffff !important; }
-    .streamlit-expanderContent {
-        background-color: #ffffff !important; 
-        color: #000000 !important;
-        border: 1px solid #ddd;
-        border-radius: 0 0 4px 4px;
-        padding: 10px;
-    }
-    .streamlit-expanderContent label p { color: #000000 !important; }
-    
-    /* RADIO BUTTONS */
-    div[role="radiogroup"] div[role="radio"] > div:first-child { border-color: #00b0f0 !important; background-color: transparent !important; }
-    div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child { background-color: #00b0f0 !important; border-color: #00b0f0 !important; }
-    
-    /* TABLAS */
-    [data-testid="stDataFrameResizable"] th { background-color: #00b0f0 !important; color: #ffffff !important; }
-    [data-testid="stDataFrameResizable"] th div { color: #ffffff !important; }
-
-    /* CALENDARIO */
-    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff; }
     .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
     .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
     .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
@@ -259,13 +197,13 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v126")
+st.title("🚀 Generador Pro v127")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("🔗 Conexión")
+    st.header("1. Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -283,7 +221,6 @@ with st.sidebar:
                 with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
                     tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
-                # LOGICA DE CARGA AUTOMATICA
                 if 'tabla_actual_nombre' not in st.session_state or st.session_state['tabla_actual_nombre'] != tabla_sel:
                     with st.spinner("Cargando datos automáticamente..."):
                         r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
@@ -299,29 +236,23 @@ with st.sidebar:
 
     st.divider()
     
-    # --- MENÚ DE NAVEGACIÓN POR BOTONES ---
+    # --- MENÚ DE NAVEGACIÓN ---
     if 'raw_records' in st.session_state:
         st.header("⚡ Generar")
         
-        # Botón Postales
-        tipo_post = "primary" if st.session_state.active_module == "Postales" else "secondary"
-        if st.button("📮 Postales", type=tipo_post, use_container_width=True):
-            navegar_a("Postales")
-            st.rerun()
+        # Botones Nativos: Primary (Naranja) si activo, Secondary (Gris) si inactivo
+        t_pos = "primary" if st.session_state.active_module == "Postales" else "secondary"
+        if st.button("📮 Postales", type=t_pos, use_container_width=True):
+            navegar_a("Postales"); st.rerun()
             
-        # Botón Reportes
-        tipo_rep = "primary" if st.session_state.active_module == "Reportes" else "secondary"
-        if st.button("📄 Reportes", type=tipo_rep, use_container_width=True):
-            navegar_a("Reportes")
-            st.rerun()
+        t_rep = "primary" if st.session_state.active_module == "Reportes" else "secondary"
+        if st.button("📄 Reportes", type=t_rep, use_container_width=True):
+            navegar_a("Reportes"); st.rerun()
             
         st.header("📅 Eventos")
-        
-        # Botón Calendario
-        tipo_cal = "primary" if st.session_state.active_module == "Calendario" else "secondary"
-        if st.button("📆 Calendario", type=tipo_cal, use_container_width=True):
-            navegar_a("Calendario")
-            st.rerun()
+        t_cal = "primary" if st.session_state.active_module == "Calendario" else "secondary"
+        if st.button("📆 Calendario", type=t_cal, use_container_width=True):
+            navegar_a("Calendario"); st.rerun()
 
         if st.button("💾 Guardar Config", use_container_width=True):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
@@ -331,7 +262,7 @@ with st.sidebar:
 if 'raw_records' not in st.session_state:
     st.info("👈 Conecta una base.")
 else:
-    modulo = st.session_state.active_module # Usar estado persistente
+    modulo = st.session_state.active_module
     df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
     AZUL = RGBColor(0, 176, 240)
 
