@@ -140,7 +140,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v115", layout="wide")
+st.set_page_config(page_title="Provident Pro v117", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -158,10 +158,10 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS AGRESIVOS (Tema Oscuro para Desplegables / Claro para App)
+# 2. ESTILOS CSS "BLINDADOS"
 st.markdown("""
 <style>
-    /* ========== 1. APP GLOBAL: TEMA CLARO ========== */
+    /* ========== 1. APP GLOBAL: TEMA CLARO FORZADO ========== */
     :root { color-scheme: light; }
     [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
     [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
@@ -169,40 +169,51 @@ st.markdown("""
     /* Textos Generales (Negro) */
     p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
 
-    /* ========== 2. EXPANDERS (BICOLOR) ========== */
-    
-    /* HEADER (Cerrado): Gris Oscuro y Texto Blanco */
-    .streamlit-expanderHeader {
+    /* ========== 2. EXPANDERS (BICOLOR & BLINDADOS) ========== */
+    /* Header (Gris Oscuro, Texto Blanco) - Para TODOS los estados (hover, active, focus) */
+    .streamlit-expanderHeader, 
+    .streamlit-expanderHeader:hover, 
+    .streamlit-expanderHeader:focus, 
+    .streamlit-expanderHeader:active {
         background-color: #262730 !important; 
         color: #ffffff !important; 
         font-weight: bold !important;
         border-radius: 4px;
         margin-bottom: 5px;
     }
-    .streamlit-expanderHeader p, .streamlit-expanderHeader svg { 
+    
+    /* Texto interno del Header (La clave para que no se ponga negro al tocar) */
+    .streamlit-expanderHeader p, 
+    .streamlit-expanderHeader:hover p,
+    .streamlit-expanderHeader:focus p,
+    .streamlit-expanderHeader:active p { 
         color: #ffffff !important; 
-        fill: #ffffff !important;
     }
     
-    /* CONTENT (Abierto): Fondo Blanco y Texto Negro (Para que los Radios se vean bien) */
+    /* Icono SVG del Header */
+    .streamlit-expanderHeader svg,
+    .streamlit-expanderHeader:hover svg {
+        fill: #ffffff !important;
+        color: #ffffff !important;
+    }
+    
+    /* Content (Blanco, Texto Negro) */
     .streamlit-expanderContent {
-        background-color: #ffffff !important; /* BLANCO */
-        color: #000000 !important; /* NEGRO */
+        background-color: #ffffff !important; 
+        color: #000000 !important;
         border: 1px solid #ddd;
         border-radius: 0 0 4px 4px;
         padding: 10px;
     }
     .streamlit-expanderContent label p {
-        color: #000000 !important; /* Texto de opciones negro */
+        color: #000000 !important; 
     }
     
     /* ========== 3. RADIO BUTTONS (ELIMINAR NARANJA) ========== */
-    /* Círculo Exterior */
     div[role="radiogroup"] div[role="radio"] > div:first-child {
         border-color: #00b0f0 !important;
         background-color: transparent !important;
     }
-    /* Círculo Seleccionado (Relleno) */
     div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child {
         background-color: #00b0f0 !important;
         border-color: #00b0f0 !important;
@@ -247,7 +258,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v115")
+st.title("🚀 Generador Pro v117")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
