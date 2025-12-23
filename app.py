@@ -140,25 +140,40 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v107", layout="wide")
+st.set_page_config(page_title="Provident Pro v109", layout="wide")
+
+# JS: Bloquear teclado en móviles
+st.markdown("""
+<script>
+    const observer = new MutationObserver((mutations) => {
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        inputs.forEach(input => {
+            if (input.getAttribute('aria-autocomplete') === 'list') {
+                input.setAttribute('inputmode', 'none');
+                input.setAttribute('readonly', 'true');
+            }
+        });
+    });
+    observer.observe(window.parent.document.body, { childList: true, subtree: true });
+</script>
+""", unsafe_allow_html=True)
 
 if 'config' not in st.session_state:
     if os.path.exists("config_app.json"):
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v107")
+st.title("🚀 Generador Pro v109")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR MEJORADO (NO TECLADO) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
         
-        # CAMBIO 1: Expander + Radio evita abrir teclado
         with st.expander("📂 Seleccionar Base", expanded=True):
             base_sel = st.radio("Bases disponibles:", list(base_opts.keys()), label_visibility="collapsed")
         
@@ -169,11 +184,10 @@ with st.sidebar:
                 tablas_data = r_tab.json()['tables']
                 st.session_state['todas_tablas'] = {t['name']: t['id'] for t in tablas_data}
                 
-                # CAMBIO 2: Expander + Radio para tablas
                 with st.expander("📅 Seleccionar Tabla (Mes)", expanded=True):
                     tabla_sel = st.radio("Tablas disponibles:", list(st.session_state['todas_tablas'].keys()), label_visibility="collapsed")
                 
-                if st.button("🔄 CARGAR DATOS", type="primary", use_container_width=True):
+                if st.button("🔄 CARGAR DATOS", type="primary"):
                     with st.spinner("Conectando..."):
                         r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{st.session_state['todas_tablas'][tabla_sel]}", headers=headers)
                         recs = r_reg.json().get("records", [])
@@ -191,7 +205,7 @@ with st.sidebar:
     if 'raw_records' in st.session_state:
         st.header("2. Módulos")
         modulo = st.radio("Ir a:", ["📮 Postales", "📄 Reportes", "📅 Calendario"], index=2)
-        if st.button("💾 Guardar Config", use_container_width=True):
+        if st.button("💾 Guardar Config"):
             with open("config_app.json", "w") as f: json.dump(st.session_state.config, f)
             st.toast("Guardado")
 
@@ -381,12 +395,11 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (CSS BACKGROUND-IMAGE + EXPANDER)
+    # MÓDULO CALENDARIO (ESTRUCTURA UNIFORME Y RÍGIDA)
     # --------------------------------------------------------
     elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
         
-        # 1. Selector de Tabla CON RADIO (NO TECLADO)
         if 'todas_tablas' in st.session_state:
             nombres_tablas = list(st.session_state['todas_tablas'].keys())
             idx_actual = 0
@@ -423,7 +436,7 @@ else:
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: 
-                        # URL ORIGINAL (NO MINIATURA)
+                        # URL ORIGINAL
                         th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
@@ -434,15 +447,23 @@ else:
             dt_objs = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_lista]
             mc = Counter([(d.year, d.month) for d in dt_objs])
             ay, am = mc.most_common(1)[0][0]
-            st.markdown(f"### 📅 {MESES_ES[am-1].capitalize()} {ay}")
-
+            
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # CSS: IMAGEN DE FONDO QUE LLENA TODO (background-size: cover)
+            # CSS UNIFORME
             st.markdown("""
             <style>
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+            .cal-title {
+                text-align: center;
+                font-size: 1.5em;
+                font-weight: bold;
+                margin: 0 !important;
+                padding-bottom: 10px;
+                color: #333;
+                background-color: #fff;
+            }
+            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
             .c-head { 
                 background: #002060; 
                 color: white; 
@@ -456,53 +477,58 @@ else:
                 background: white; 
                 border: 1px solid #ccc; 
                 border-radius: 2px;
-                height: 140px; 
+                height: 160px; 
                 display: flex; 
                 flex-direction: column;
-                justify-content: space-between;
+                justify-content: space-between; /* ESTO ES CLAVE */
                 overflow: hidden;
             }
             
+            /* HEADER: DIA */
             .c-day { 
                 flex: 0 0 auto;
                 background: #00b0f0; 
                 color: white;
                 font-weight: 900; 
-                font-size: 14px; 
+                font-size: 1.1em; 
                 text-align: center;
-                padding: 1px;
+                padding: 2px 0;
             }
             
-            /* BODY: IMAGEN DE FONDO */
+            /* BODY: IMAGEN (Expandible) */
             .c-body { 
-                flex-grow: 1; 
+                flex-grow: 1; /* Ocupa todo el espacio restante */
                 width: 100%;
                 background-position: center;
                 background-repeat: no-repeat;
-                background-size: cover; /* LLENA TODO EL ESPACIO SIN DEFORMAR */
+                background-size: cover; 
                 background-color: #f8f8f8;
             }
             
+            /* FOOTER: OBLIGATORIO */
             .c-foot { 
                 flex: 0 0 auto;
                 background: #002060; 
-                color: white; /* BLANCO */
+                color: #ffffff; 
                 font-weight: 900; 
                 text-align: center; 
-                font-size: 12px; 
-                padding: 1px;
+                font-size: 0.9em; 
+                padding: 2px;
+                white-space: nowrap; /* Evita que el texto rompa la altura */
+                overflow: hidden;
             }
             
+            /* Ajustes Mobile */
             @media (max-width: 600px) {
-                .c-head { font-size: 10px; padding: 1px; }
-                .c-cell { height: 100px; }
-                .c-day { font-size: 11px; }
-                .c-foot { font-size: 10px; }
+                .c-cell { height: 110px; }
+                .c-day { font-size: 0.9em; }
+                .c-foot { font-size: 0.7em; }
             }
             </style>
             """, unsafe_allow_html=True)
 
-            h = "<div class='c-grid'>"
+            h = f"<div class='cal-title'>📅 {MESES_ES[am-1].capitalize()} {ay}</div>"
+            h += "<div class='c-grid'>"
             for d in ["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]: h += f"<div class='c-head'>{d}</div>"
             
             for wk in weeks:
@@ -513,18 +539,31 @@ else:
                         acts = fechas_oc.get(k, [])
                         
                         h += f"<div class='c-cell'>"
-                        h += f"<div class='c-day'>{d}</div>" # HEADER
                         
-                        # BODY CON BACKGROUND IMAGE
+                        # HEADER
+                        h += f"<div class='c-day'>{d}</div>"
+                        
+                        # BODY
                         style_bg = ""
                         if acts and acts[0]['thumb']:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
-                        
                         h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # FOOTER
+                        # FOOTER (Siempre presente para uniformidad)
                         if len(acts) > 1:
-                            h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
+                            ftxt = f"+ {len(acts)-1} más"
+                            fcol = "#ffffff"
+                        elif len(acts) == 1:
+                            ftxt = "1 evento"
+                            fcol = "#ffffff"
+                        else:
+                            ftxt = "Sin actividad"
+                            fcol = "#666" # Gris para disimular
+                            
+                        # Si no hay eventos, pintamos el footer gris oscuro o igual al borde
+                        bg_foot = "#002060" if acts else "#e0e0e0"
+                        
+                        h += f"<div class='c-foot' style='background:{bg_foot}; color:{fcol}'>{ftxt}</div>"
                         
                         h += "</div>"
             h += "</div>"
