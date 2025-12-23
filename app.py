@@ -38,7 +38,7 @@ WHATSAPP_GROUPS = {
 }
 
 # ============================================================
-#  FUNCIONES TÉCNICAS (LOGICA DE NEGOCIO)
+#  FUNCIONES TÉCNICAS
 # ============================================================
 
 def recorte_inteligente_bordes(img):
@@ -54,10 +54,10 @@ def recorte_inteligente_bordes(img):
     return img.crop((left, top, right + 1, bottom + 1))
 
 def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=False):
-    base_w, base_h = int(target_w_pt / 9525), int(target_h_pt / 9525)
-    render_w, render_h = base_w * 2, base_h * 2
     img = Image.open(BytesIO(img_data)).convert("RGB")
     img = recorte_inteligente_bordes(img)
+    base_w, base_h = int(target_w_pt / 9525), int(target_h_pt / 9525)
+    render_w, render_h = base_w * 2, base_h * 2
     if con_blur:
         fondo = ImageOps.fit(img, (render_w, render_h), Image.Resampling.LANCZOS)
         fondo = fondo.filter(ImageFilter.GaussianBlur(radius=10))
@@ -68,7 +68,7 @@ def procesar_imagen_inteligente(img_data, target_w_pt, target_h_pt, con_blur=Fal
     else:
         img_final = img.resize((render_w, render_h), Image.Resampling.LANCZOS)
     output = BytesIO()
-    img_final.save(output, format="JPEG", quality=85, optimize=True)
+    img_final.save(output, format="JPEG", quality=85)
     output.seek(0)
     return output
 
@@ -109,37 +109,39 @@ def obtener_concat_texto(record):
     return ", ".join([str(p) for p in parts if str(p).lower() != 'none'])
 
 # ============================================================
-#  INICIO APP
+#  ESTILOS Y CONFIGURACIÓN UI
 # ============================================================
-st.set_page_config(page_title="Provident Pro v151", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Provident Pro v152", layout="wide", initial_sidebar_state="expanded")
 
-# CSS PARA FORZAR SIDEBAR Y CALENDARIO TABULAR
 st.markdown("""
 <style>
-    /* FORZAR SIDEBAR VISIBLE EN MÓVIL */
-    section[data-testid="stSidebar"] {
-        display: block !important;
-        width: 250px !important;
-        position: relative !important;
-        z-index: 999;
+    /* FORZAR SIDEBAR EN MÓVIL */
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] { width: 80% !important; display: block !important; visibility: visible !important; }
+        [data-testid="stSidebarCollapsedControl"] { display: block !important; left: 10px !important; }
     }
-    
+
     header[data-testid="stHeader"] { visibility: hidden; height: 0; }
     .block-container { padding-top: 20px !important; }
 
-    /* TABLA DE CALENDARIO REAL (No se rompe en móvil) */
-    .cal-table-fixed { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .cal-table-fixed th { background: #002060; color: white; font-size: 11px; padding: 5px 0; text-align: center; }
+    /* TABLA CALENDARIO INAMOVIBLE */
+    .cal-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .cal-table-fixed { width: 100%; min-width: 320px; border-collapse: collapse; table-layout: fixed; }
+    .cal-table-fixed th { background: #002060; color: white; font-size: 10px; padding: 4px 0; text-align: center; }
     .cal-table-fixed td { 
-        height: 80px; border: 1px solid #ddd; position: relative; padding: 0; vertical-align: top;
-        background-color: white;
+        height: 70px; border: 0.5px solid #ddd; position: relative; padding: 0; vertical-align: top;
+        background-color: white; overflow: hidden;
     }
-    .td-num { background: #00b0f0; color: white; font-size: 10px; font-weight: bold; text-align: center; height: 16px; }
-    .td-img { height: 50px; background-size: cover; background-position: center; width: 100%; }
+    .td-num { background: #00b0f0; color: white; font-size: 9px; font-weight: bold; text-align: center; height: 14px; }
+    .td-img { height: 46px; background-size: cover; background-position: center; width: 100%; }
     .td-link { position: absolute; top:0; left:0; width:100%; height:100%; text-decoration: none !important; color: transparent !important; z-index: 10; }
     
     /* NAV DETALLE */
-    .nav-box { display: flex; align-items: center; justify-content: space-between; background: white; padding: 10px; margin-bottom: 10px; border-bottom: 2px solid #00b0f0; }
+    .nav-box { display: flex; align-items: center; justify-content: space-between; background: white; padding: 8px; margin-bottom: 5px; border-bottom: 2px solid #00b0f0; }
+    .nav-title-text { text-align: center; line-height: 1.1; }
+    .nav-title-text b { color: #002060; font-size: 1.1em; display: block; }
+
+    div.stButton > button[key="btn_volver"] { background-color: #00b0f0 !important; color: white !important; font-weight: bold !important; width: 100%; border: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -150,8 +152,10 @@ if 'idx_postal' not in st.session_state: st.session_state.idx_postal = 0
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("PROVIDENT")
+    st.image("https://www.provident.com.mx/content/dam/provident-mexico/logos/logo-provident.png", width=150)
+    st.header("🔗 Airtable")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
@@ -174,9 +178,9 @@ with st.sidebar:
         if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
         if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
 
-# --- MODULO MAIN ---
+# --- MAIN ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Selecciona una base en el menú lateral.")
+    st.info("👈 Conecta una base.")
 else:
     mod = st.session_state.active_module
 
@@ -187,15 +191,14 @@ else:
             if f:
                 fk = f.split('T')[0]
                 if fk not in fechas_oc: fechas_oc[fk] = []
-                th = r['fields'].get('Postal', [{}])[0].get('url')
+                th = r['fields'].get('Postal', [{}])[0].get('url') if 'Postal' in r['fields'] else None
                 fechas_oc[fk].append({"thumb": th, "raw": r['fields']})
 
-        # DETALLE DEL DÍA
         params = st.query_params
-        if "day" in params:
-            st.session_state.dia_seleccionado = params["day"]
+        if "day" in params: st.session_state.dia_seleccionado = params["day"]
         
-        if st.session_state.dia_seleccionado:
+        # VALIDACIÓN ANTIERRORES LINEA 200
+        if st.session_state.dia_seleccionado and st.session_state.dia_seleccionado in fechas_oc:
             k = st.session_state.dia_seleccionado
             evs = sorted(fechas_oc[k], key=lambda x: x['raw'].get('Hora',''))
             curr = st.session_state.idx_postal % len(evs)
@@ -203,58 +206,55 @@ else:
             dt = datetime.strptime(k, '%Y-%m-%d')
             mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
 
-            # CABECERA PAGINADA
             st.markdown(f"""
             <div class="nav-box">
-                <a href="?day={k}&nav=prev" target="_self" style="background:#00b0f0; color:white; padding:8px; border-radius:50%; text-decoration:none;">←</a>
-                <div style="text-align:center;"><b>{mes_n}</b><br>{dia_n}</div>
-                <a href="?day={k}&nav=next" target="_self" style="background:#00b0f0; color:white; padding:8px; border-radius:50%; text-decoration:none;">→</a>
+                <a href="?day={k}&nav=prev" target="_self" style="background:#00b0f0; color:white; padding:8px 12px; border-radius:50%; text-decoration:none; font-weight:bold;">←</a>
+                <div class="nav-title-text"><b>{mes_n}</b>{dia_n}</div>
+                <a href="?day={k}&nav=next" target="_self" style="background:#00b0f0; color:white; padding:8px 12px; border-radius:50%; text-decoration:none; font-weight:bold;">→</a>
             </div>
             """, unsafe_allow_html=True)
             
             if "nav" in params:
-                if params["nav"] == "next": st.session_state.idx_postal += 1
-                else: st.session_state.idx_postal -= 1
+                st.session_state.idx_postal += 1 if params["nav"] == "next" else -1
                 st.query_params.clear(); st.query_params["day"] = k; st.rerun()
 
-            if st.button("🔙 VOLVER AL MES", use_container_width=True):
-                st.session_state.dia_seleccionado = None
-                st.query_params.clear(); st.rerun()
+            if st.button("🔙 VOLVER AL MES", key="btn_volver"):
+                st.session_state.dia_seleccionado = None; st.query_params.clear(); st.rerun()
 
-            st.image(evt['thumb'], use_container_width=True)
+            if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
             f = evt['raw']
             suc, tip, hor = f.get('Sucursal',''), f.get('Tipo',''), obtener_hora_texto(f.get('Hora',''))
             ubi = obtener_concat_texto(f)
             st.markdown(f"**🏢 {suc}**\n\n**📌 {tip}** | **⏰ {hor}**\n\n**📍 {ubi}**")
             
-            # WHATSAPP
             sk = str(suc).lower().strip()
             gp = WHATSAPP_GROUPS.get(sk, {"link":"", "name":"N/A"})
             msj = f"Excelente día, te esperamos este {dia_n} de {mes_n.capitalize()} para el evento de {tip}, a las {hor} en {ubi}"
             jwa = f"<script>function c(){{navigator.clipboard.writeText(`{msj}`).then(()=>{{window.open('{gp['link']}','_blank');}});}}</script><div onclick='c()' style='background:#25D366;color:white;padding:12px;text-align:center;border-radius:8px;cursor:pointer;font-weight:bold;'>📲 WhatsApp {gp['name']}</div>"
             if gp['link']: st.components.v1.html(jwa, height=80)
-
         else:
-            # CALENDARIO TABULAR
-            dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
-            st.markdown(f"<div style='background:#002060; color:white; padding:10px; text-align:center; font-weight:bold; border-radius:8px;'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
-            
-            cal_html = '<table class="cal-table-fixed"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
-            weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
-            for week in weeks:
-                cal_html += '<tr>'
-                for d in week:
-                    if d == 0: cal_html += '<td></td>'
-                    else:
-                        k = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(d).zfill(2)}"
-                        evs = fechas_oc.get(k, [])
-                        bg = f"background-image: url('{evs[0]['thumb']}');" if evs and evs[0]['thumb'] else ""
-                        foot = f"+{len(evs)-1}" if len(evs)>1 else ""
-                        link = f'<a href="?day={k}" target="_self" class="td-link">.</a>' if evs else ""
-                        cal_html += f'<td><div class="td-num">{d}</div><div class="td-img" style="{bg}"></div><div style="font-size:7px; text-align:center; background:#002060; color:white;">{foot}</div>{link}</td>'
-                cal_html += '</tr>'
-            cal_html += '</table>'
-            st.markdown(cal_html, unsafe_allow_html=True)
+            # MOSTRAR CALENDARIO SI NO HAY DÍA O SI EL DÍA SELECCIONADO NO EXISTE
+            st.session_state.dia_seleccionado = None
+            if fechas_oc:
+                dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
+                st.markdown(f"<div style='background:#002060; color:white; padding:10px; text-align:center; font-weight:bold; border-radius:8px; margin-bottom:5px;'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
+                
+                cal_html = '<div class="cal-wrapper"><table class="cal-table-fixed"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
+                weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
+                for week in weeks:
+                    cal_html += '<tr>'
+                    for d in week:
+                        if d == 0: cal_html += '<td></td>'
+                        else:
+                            fk = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(d).zfill(2)}"
+                            evs = fechas_oc.get(fk, [])
+                            bg = f"background-image: url('{evs[0]['thumb']}');" if evs and evs[0]['thumb'] else ""
+                            foot = f"+{len(evs)-1}" if len(evs)>1 else ""
+                            link = f'<a href="?day={fk}" target="_self" class="td-link">.</a>' if evs else ""
+                            cal_html += f'<td><div class="td-num">{d}</div><div class="td-img" style="{bg}"></div><div style="font-size:7px; text-align:center; background:#002060; color:white;">{foot}</div>{link}</td>'
+                    cal_html += '</tr>'
+                cal_html += '</table></div>'
+                st.markdown(cal_html, unsafe_allow_html=True)
 
     elif mod in ["Postales", "Reportes"]:
         st.subheader(f"Generador de {mod}")
@@ -317,4 +317,4 @@ else:
                     z_buf = BytesIO()
                     with zipfile.ZipFile(z_buf, "w") as z:
                         for f in zip_data: z.writestr(f["n"], f["d"])
-                    st.download_button("⬇️ DESCARGAR PACK", z_buf.getvalue(), "Provident.zip", "application/zip")
+                    st.download_button("⬇️ DESCARGAR ZIP", z_buf.getvalue(), "Provident.zip", "application/zip")
