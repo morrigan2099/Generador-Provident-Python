@@ -28,13 +28,13 @@ MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
 WHATSAPP_GROUPS = {
-    "cordoba": {"link": "https://chat.whatsapp.com/EablxD3sq3n65GHWq9uKTg", "name": "CORDOBA"},
-    "boca del rio": {"link": "https://chat.whatsapp.com/ES2ufZaP8f3JrNyO9lpFcX", "name": "BOCA DEL RIO"},
-    "orizaba": {"link": "https://chat.whatsapp.com/EHITAvFTeYO5hOsS14xXJM", "name": "ORIZABA"},
-    "tuxtepec": {"link": "https://chat.whatsapp.com/HkKsqVFYZSn99FPdjZ7Whv", "name": "TUXTEPEC"},
-    "oaxaca": {"link": "https://chat.whatsapp.com/JRawICryDEf8eO2RYKqS0T", "name": "OAXACA"},
-    "tehuacan": {"link": "https://chat.whatsapp.com/E9z0vLSwfZCB97Ou4A6Chv", "name": "TEHUACAN"},
-    "xalapa": {"link": "", "name": "XALAPA"},
+    "cordoba": {"link": "https://chat.whatsapp.com/EablxD3sq3n65GHWq9uKTg", "name": "CORDOBA Volanteo PDV Provident"},
+    "boca del rio": {"link": "https://chat.whatsapp.com/ES2ufZaP8f3JrNyO9lpFcX", "name": "BOCA DEL RIO Volanteo PDV Provident"},
+    "orizaba": {"link": "https://chat.whatsapp.com/EHITAvFTeYO5hOsS14xXJM", "name": "ORIZABA Volanteo PDV Provident"},
+    "tuxtepec": {"link": "https://chat.whatsapp.com/HkKsqVFYZSn99FPdjZ7Whv", "name": "TUXTEPEC Volanteo PDV Provident"},
+    "oaxaca": {"link": "https://chat.whatsapp.com/JRawICryDEf8eO2RYKqS0T", "name": "OAXACA Volanteo PDV Provident"},
+    "tehuacan": {"link": "https://chat.whatsapp.com/E9z0vLSwfZCB97Ou4A6Chv", "name": "TEHUACAN Volanteo PDV Provident"},
+    "xalapa": {"link": "", "name": "XALAPA Volanteo PDV Provident"},
 }
 
 # ============================================================
@@ -110,7 +110,6 @@ def generar_pdf(pptx_bytes):
         return data
     except: return None
 
-# --- LÓGICA DE DATOS ---
 def obtener_fecha_texto(fecha_dt):
     dia_idx = fecha_dt.weekday()
     return f"{DIAS_ES[dia_idx]} {fecha_dt.day} de {MESES_ES[fecha_dt.month - 1]} de {fecha_dt.year}"
@@ -194,12 +193,7 @@ def mostrar_detalles_dia(eventos_del_dia, k_fecha):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v132", layout="wide")
-
-if 'config' not in st.session_state:
-    if os.path.exists("config_app.json"):
-        with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
-    else: st.session_state.config = {"plantillas": {}}
+st.set_page_config(page_title="Provident Pro v133", layout="wide")
 
 if 'active_module' not in st.session_state:
     st.session_state.active_module = st.query_params.get("view", "Calendario")
@@ -208,108 +202,101 @@ def navegar_a(modulo):
     st.session_state.active_module = modulo
     st.query_params["view"] = modulo
 
-# Estilos CSS
+# --- ESTILOS CSS RECONSTRUIDOS ---
 st.markdown("""
 <style>
-    .cal-title { text-align: center; font-size: 2em; font-weight: bold; margin-bottom: 15px; color: #002060; }
-    .c-head { background: #002060; color: white; padding: 10px; text-align: center; font-weight: bold; border-radius: 4px; }
-    /* Estilo para que el botón de Streamlit parezca una celda */
-    div.stButton > button {
-        height: 150px;
-        width: 100%;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-        padding: 5px;
-        display: block;
-        background-color: white;
-        background-size: cover;
-        background-position: center;
-        position: relative;
-        text-align: center;
+    /* CALENDARIO ORIGINAL */
+    .cal-title { text-align: center; font-size: 1.5em; font-weight: bold; margin-bottom: 10px; color: #333; background-color: #fff; }
+    .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+    .c-head { background: #002060; color: white; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
+    
+    .c-cell-container { position: relative; height: 160px; border: 1px solid #ccc; border-radius: 2px; overflow: hidden; background: white; }
+    .c-cell-content { display: flex; flex-direction: column; height: 100%; width: 100%; justify-content: space-between; }
+    
+    .c-day { flex: 0 0 auto; background: #00b0f0; color: white; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
+    .c-body { flex-grow: 1; width: 100%; background-position: center; background-repeat: no-repeat; background-size: cover; background-color: #f8f8f8; }
+    .c-foot { flex: 0 0 auto; height: 20px; background: #002060; color: #ffffff; font-weight: 900; text-align: center; font-size: 0.9em; padding: 1px; white-space: nowrap; overflow: hidden; }
+    .c-foot-empty { flex: 0 0 auto; height: 20px; background: #e0e0e0; }
+
+    /* BOTÓN INVISIBLE QUE CUBRE LA CELDA */
+    .stButton > button[key^="btn_"] {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: transparent !important; border: none !important; color: transparent !important;
+        z-index: 10; cursor: pointer;
     }
-    div.stButton > button p {
-        background-color: rgba(0, 176, 240, 0.85);
-        color: white !important;
-        font-weight: bold;
-        position: absolute;
-        top: 0; left: 0; width: 30px; height: 25px;
-        border-radius: 0 0 4px 0;
-        margin: 0;
-    }
-    .plus-label {
-        position: absolute; bottom: 5px; right: 5px;
-        background: #002060; color: white; padding: 2px 6px;
-        border-radius: 10px; font-size: 10px;
-    }
+    
+    @media (max-width: 600px) { .c-cell-container { height: 110px; } .c-day { font-size: 0.9em; } }
 </style>
 """, unsafe_allow_html=True)
 
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
+# --- SIDEBAR ORIGINAL ---
 with st.sidebar:
     st.header("🔗 Conexión")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
-        base_sel = st.selectbox("Base:", list(base_opts.keys()))
+        base_sel = st.radio("Base:", list(base_opts.keys()))
         if base_sel:
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             if r_tab.status_code == 200:
-                tablas = {t['name']: t['id'] for t in r_tab.json()['tables']}
-                tabla_sel = st.selectbox("Mes:", list(tablas.keys()))
+                tab_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
+                tabla_sel = st.radio("Mes:", list(tab_opts.keys()))
                 if 'tabla_actual' not in st.session_state or st.session_state.tabla_actual != tabla_sel:
-                    with st.spinner("Sincronizando..."):
-                        r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tablas[tabla_sel]}", headers=headers)
-                        recs = r_reg.json().get("records", [])
-                        st.session_state.raw_data_original = recs
-                        st.session_state.raw_records = [{'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} for r in recs]
-                        st.session_state.tabla_actual = tabla_sel
+                    r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tab_opts[tabla_sel]}", headers=headers)
+                    recs = r_reg.json().get("records", [])
+                    st.session_state.raw_data_original = recs
+                    st.session_state.raw_records = [{'id': r['id'], 'fields': {k: (procesar_texto_maestro(v, k) if k != 'Fecha' else v) for k, v in r['fields'].items()}} for r in recs]
+                    st.session_state.tabla_actual = tabla_sel
                     st.rerun()
     st.divider()
     if 'raw_records' in st.session_state:
-        st.button("📮 Postales", on_click=navegar_a, args=("Postales",), use_container_width=True, type="primary" if st.session_state.active_module == "Postales" else "secondary")
-        st.button("📄 Reportes", on_click=navegar_a, args=("Reportes",), use_container_width=True, type="primary" if st.session_state.active_module == "Reportes" else "secondary")
-        st.button("📅 Calendario", on_click=navegar_a, args=("Calendario",), use_container_width=True, type="primary" if st.session_state.active_module == "Calendario" else "secondary")
+        st.subheader("⚡ Generar")
+        if st.button("📮 Postales", type="primary" if st.session_state.active_module == "Postales" else "secondary", use_container_width=True): navegar_a("Postales"); st.rerun()
+        if st.button("📄 Reportes", type="primary" if st.session_state.active_module == "Reportes" else "secondary", use_container_width=True): navegar_a("Reportes"); st.rerun()
+        st.subheader("📅 Eventos")
+        if st.button("📆 Calendario", type="primary" if st.session_state.active_module == "Calendario" else "secondary", use_container_width=True): navegar_a("Calendario"); st.rerun()
 
-# --- MÓDULOS ---
-
+# --- MÓDULOS PRINCIPALES ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Selecciona una base y tabla para comenzar.")
+    st.info("👈 Conecta una base en el sidebar.")
 else:
-    mod = st.session_state.active_module
+    modulo = st.session_state.active_module
     AZUL_PRO = RGBColor(0, 176, 240)
 
-    if mod == "Postales" or mod == "Reportes":
-        folder = f"Plantillas/{mod.upper()}"
-        if not os.path.exists(folder): os.makedirs(folder)
-        st.subheader(f"Generador de {mod}")
-        
+    if modulo == "Postales" or modulo == "Reportes":
+        st.subheader(f"📮 Generador de {modulo}")
         df_full = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
-        for col in df_full.columns:
-            if isinstance(df_full[col].iloc[0], list): df_full.drop(col, axis=1, inplace=True)
-        
-        sel_all = st.checkbox("Seleccionar todo")
+        for c in df_full.columns:
+            if isinstance(df_full[c].iloc[0], list): df_full.drop(c, axis=1, inplace=True)
+        sel_all = st.checkbox("Seleccionar Todo")
         df_full.insert(0, "✅", sel_all)
         df_edit = st.data_editor(df_full, hide_index=True)
-        indices = df_edit.index[df_edit["✅"] == True].tolist()
-
-        if indices:
+        sel_idx = df_edit.index[df_edit["✅"]==True].tolist()
+        
+        if sel_idx:
+            folder = f"Plantillas/{modulo.upper()}"
+            if not os.path.exists(folder): os.makedirs(folder)
             archs = [f for f in os.listdir(folder) if f.endswith('.pptx')]
-            tipos = df_full.loc[indices, "Tipo"].unique()
-            for t in tipos:
-                st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla para {t}:", archs, key=f"tpl_{t}")
+            tipos = df_full.loc[sel_idx, "Tipo"].unique()
+            cols = st.columns(len(tipos))
+            if 'config' not in st.session_state: st.session_state.config = {"plantillas": {}}
+            for i, t in enumerate(tipos):
+                st.session_state.config["plantillas"][t] = cols[i].selectbox(f"Plantilla para {t}:", archs, key=f"p_{t}")
 
-            if st.button(f"🚀 Generar {len(indices)} {mod}"):
-                p_bar = st.progress(0); zip_data = []
-                for i, idx in enumerate(indices):
+            if st.button("🔥 GENERAR ARCHIVOS", type="primary"):
+                p_bar = st.progress(0); archivos = []
+                for i, idx in enumerate(sel_idx):
                     rec, orig = st.session_state.raw_records[idx]['fields'], st.session_state.raw_data_original[idx]['fields']
                     dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d')
-                    ft, fs = rec.get('Tipo',''), rec.get('Sucursal','')
+                    ft, fs = rec.get('Tipo', 'Sin Tipo'), rec.get('Sucursal', '000')
                     tfe, tho = obtener_fecha_texto(dt), obtener_hora_texto(rec.get('Hora',''))
                     tfe_c = f"{MESES_ES[dt.month-1].capitalize()} {dt.day} de {dt.year}"
                     fcf = f"{tfe_c}\n{tho}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
+                    narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {MESES_ES[dt.month-1]} - {ft}, {fs}")
                     
                     try:
                         prs = Presentation(f"{folder}/{st.session_state.config['plantillas'][ft]}")
@@ -319,76 +306,95 @@ else:
                                     tags = ["Foto de equipo", "Foto 01", "Foto 02", "Foto 03", "Foto 04", "Foto 05", "Reporte firmado", "Lista de asistencia"]
                                     for tag in tags:
                                         if f"<<{tag}>>" in shp.text_frame.text and orig.get(tag):
-                                            img_io = procesar_imagen_inteligente(requests.get(orig[tag][0]['url']).content, shp.width, shp.height, con_blur=True)
+                                            img_io = procesar_imagen_inteligente(requests.get(orig[tag][0]['url']).content, shp.width, shp.height, True)
                                             slide.shapes.add_picture(img_io, shp.left, shp.top, shp.width, shp.height)
                                             shp._element.getparent().remove(shp._element)
                             for shp in slide.shapes:
                                 if shp.has_text_frame:
-                                    reps = {"<<Tipo>>": textwrap.fill(ft, 35), "<<Sucursal>>": fs, "<<Confechor>>": fcf, "<<Concat>>": fcc, "<<Confecha>>": tfe, "<<Conhora>>": tho}
-                                    for k, v in reps.items():
-                                        if k in shp.text_frame.text:
-                                            tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-                                            tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-                                            run = p.add_run(); run.text = str(v); run.font.bold = True; run.font.color.rgb = AZUL_PRO
-                                            run.font.size = Pt(28 if k == "<<Confechor>>" else 24)
-
+                                    reps = {"<<Tipo>>":textwrap.fill(ft,35), "<<Sucursal>>":fs, "<<Confechor>>":fcf, "<<Concat>>":fcc, "<<Consuc>>":fcc, "<<Confecha>>":tfe, "<<Conhora>>":tho}
+                                    for tag, val in reps.items():
+                                        if tag in shp.text_frame.text:
+                                            tf = shp.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE; tf.word_wrap = True
+                                            if tag == "<<Confechor>>":
+                                                tf.clear()
+                                                p1 = tf.paragraphs[0]; p1.text = tfe_c; p1.alignment = PP_ALIGN.CENTER; p1.font.bold = True; p1.font.color.rgb = AZUL_PRO; p1.font.size = Pt(28)
+                                                p2 = tf.add_paragraph(); p2.text = tho; p2.alignment = PP_ALIGN.CENTER; p2.font.bold = True; p2.font.color.rgb = AZUL_PRO; p2.font.size = Pt(28)
+                                            else:
+                                                tf.clear(); p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER; run = p.add_run(); run.text=str(val); run.font.bold=True; run.font.color.rgb=AZUL_PRO; run.font.size=Pt(32 if tag!="<<Tipo>>" else 12)
                         buf = BytesIO(); prs.save(buf)
-                        pdf = generar_pdf(buf.getvalue())
-                        if pdf:
-                            if mod == "Postales":
-                                img_final = convert_from_bytes(pdf, dpi=150)[0]
-                                img_buf = BytesIO(); img_final.save(img_buf, format="JPEG", quality=85)
-                                zip_data.append({"n": f"{dt.day}_{ft}_{fs}.jpg", "d": img_buf.getvalue()})
+                        dout = generar_pdf(buf.getvalue())
+                        if dout:
+                            if modulo == "Postales":
+                                img_bytes = convert_from_bytes(dout, dpi=170)[0]
+                                with BytesIO() as b:
+                                    img_bytes.save(b, format="JPEG", quality=85)
+                                    archivos.append({"Ruta": f"{dt.year}/Postales/{fs}/{narc}.png", "Data": b.getvalue()})
                             else:
-                                zip_data.append({"n": f"{dt.day}_{ft}_{fs}.pdf", "d": pdf})
+                                archivos.append({"Ruta": f"{dt.year}/Reportes/{fs}/{narc}.pdf", "Data": dout})
                     except: pass
-                    p_bar.progress((i+1)/len(indices))
+                    p_bar.progress((i+1)/len(sel_idx))
                 
-                if zip_data:
-                    z_buf = BytesIO()
-                    with zipfile.ZipFile(z_buf, "w") as z:
-                        for f in zip_data: z.writestr(f["n"], f["d"])
-                    st.download_button("⬇️ Descargar todo", z_buf.getvalue(), f"{mod}.zip", "application/zip")
+                if archivos:
+                    zb = BytesIO()
+                    with zipfile.ZipFile(zb, "a", zipfile.ZIP_DEFLATED) as z:
+                        for f in archivos: z.writestr(f["Ruta"], f["Data"])
+                    st.download_button(f"⬇️ DESCARGAR {len(archivos)} ARCHIVOS", zb.getvalue(), "Generados.zip", "application/zip", type="primary")
 
-    elif mod == "Calendario":
-        fechas = {}
+    elif modulo == "Calendario":
+        st.subheader("📅 Calendario de Actividades")
+        fechas_oc = {}
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
             if f:
-                fk = f.split('T')[0]
-                if fk not in fechas: fechas[fk] = []
-                th = r['fields'].get('Postal', [{}])[0].get('url')
-                fechas[fk].append({"thumb": th, "raw_fields": r['fields']})
+                f_short = f.split('T')[0]
+                if f_short not in fechas_oc: fechas_oc[f_short] = []
+                th = r['fields']['Postal'][0].get('url') if 'Postal' in r['fields'] else None
+                fechas_oc[f_short].append({"thumb": th, "raw_fields": r['fields']})
         
-        if fechas:
-            dt_ref = datetime.strptime(list(fechas.keys())[0], '%Y-%m-%d')
-            st.markdown(f"<div class='cal-title'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
-            cal = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
+        if fechas_oc:
+            dt_list = [datetime.strptime(x, '%Y-%m-%d') for x in fechas_oc.keys()]
+            mc = Counter([(d.year, d.month) for d in dt_list])
+            ay, am = mc.most_common(1)[0][0]
+            st.markdown(f"<div class='cal-title'>📅 {MESES_ES[am-1].upper()} {ay}</div>", unsafe_allow_html=True)
             
-            h_cols = st.columns(7)
-            for i, d in enumerate(["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"]): h_cols[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
+            weeks = calendar.Calendar(0).monthdayscalendar(ay, am)
+            # Cabeceras
+            cols_h = st.columns(7)
+            for i, d in enumerate(["LUN","MAR","MIÉ","JUE","VIE","SÁB","DOM"]): 
+                cols_h[i].markdown(f"<div class='c-head'>{d}</div>", unsafe_allow_html=True)
             
-            for week in cal:
+            # Grid
+            for week in weeks:
                 cols = st.columns(7)
-                for i, day in enumerate(week):
+                for i, d in enumerate(week):
                     with cols[i]:
-                        if day > 0:
-                            k = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(day).zfill(2)}"
-                            evs = fechas.get(k, [])
-                            bg = evs[0]['thumb'] if evs and evs[0]['thumb'] else ""
+                        if d == 0:
+                            st.markdown("<div style='height:160px;'></div>", unsafe_allow_html=True)
+                        else:
+                            k = f"{ay}-{str(am).zfill(2)}-{str(d).zfill(2)}"
+                            acts = fechas_oc.get(k, [])
+                            bg = f"background-image: url('{acts[0]['thumb']}');" if acts and acts[0]['thumb'] else ""
                             
-                            # Inyección de imagen de fondo por CSS Dinámico
-                            btn_label = str(day)
-                            if len(evs) > 1: btn_label += f" (+{len(evs)-1})"
+                            foot_txt = "&nbsp;"
+                            foot_cls = "c-foot-empty"
+                            if len(acts) > 1:
+                                foot_txt = f"+ {len(acts)-1} más"
+                                foot_cls = "c-foot"
+                            elif len(acts) == 1:
+                                foot_cls = "c-foot"
                             
-                            # Botón con estilo de celda
-                            style = f"""
-                            <style>
-                            div.stButton > button[key="btn_{k}"] {{
-                                background-image: url('{bg}');
-                            }}
-                            </style>
-                            """
-                            st.markdown(style, unsafe_allow_html=True)
-                            if st.button(f"{day}", key=f"btn_{k}", use_container_width=True):
-                                mostrar_detalles_dia(evs, k)
+                            # ESTRUCTURA VISUAL ORIGINAL
+                            st.markdown(f"""
+                            <div class="c-cell-container">
+                                <div class="c-cell-content">
+                                    <div class="c-day">{d}</div>
+                                    <div class="c-body" style="{bg}"></div>
+                                    <div class="{foot_cls}">{foot_txt}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # BOTÓN INVISIBLE PARA EL CLIC
+                            if acts:
+                                if st.button(" ", key=f"btn_{k}"):
+                                    mostrar_detalles_dia(acts, k)
