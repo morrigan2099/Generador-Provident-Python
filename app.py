@@ -101,7 +101,7 @@ def generar_pdf(pptx_bytes):
 
 # --- LÓGICA DE DATOS ---
 def obtener_fecha_texto(fecha_dt):
-    # Formato largo estándar (con día de la semana) para <<Confecha>>
+    # Formato completo con día de la semana (Lunes 23 de...)
     dia_idx = fecha_dt.weekday()
     return f"{DIAS_ES[dia_idx]} {fecha_dt.day} de {MESES_ES[fecha_dt.month - 1]} de {fecha_dt.year}"
 
@@ -142,7 +142,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v122", layout="wide")
+st.set_page_config(page_title="Provident Pro v123", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -160,9 +160,85 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS - SOLO CALENDARIO (Todo lo demás nativo)
+# 2. ESTILOS CSS - SOLO CALENDARIO Y TEMA CLARO BLINDADO
 st.markdown("""
 <style>
+    /* ========== 1. APP GLOBAL: TEMA CLARO ========== */
+    :root { color-scheme: light; }
+    [data-testid="stAppViewContainer"] { background-color: #ffffff !important; color: #000000 !important; }
+    [data-testid="stSidebar"] { background-color: #f8f9fa !important; border-right: 1px solid #ddd; }
+    
+    /* Textos Generales (Negro) */
+    p, label, h1, h2, h3, h4, h5, h6, li { color: #000000 !important; }
+
+    /* ========== 2. EXPANDERS (BICOLOR) ========== */
+    
+    /* HEADER (Cerrado): Gris Oscuro y Texto Blanco */
+    .streamlit-expanderHeader, 
+    .streamlit-expanderHeader:hover, 
+    .streamlit-expanderHeader:focus, 
+    .streamlit-expanderHeader:active {
+        background-color: #262730 !important; 
+        color: #ffffff !important; 
+        font-weight: bold !important;
+        border-radius: 4px;
+        margin-bottom: 5px;
+    }
+    
+    /* Texto interno del Header */
+    .streamlit-expanderHeader p, 
+    .streamlit-expanderHeader:hover p,
+    .streamlit-expanderHeader:focus p,
+    .streamlit-expanderHeader:active p { 
+        color: #ffffff !important; 
+    }
+    
+    /* Icono SVG del Header */
+    .streamlit-expanderHeader svg,
+    .streamlit-expanderHeader:hover svg {
+        fill: #ffffff !important;
+        color: #ffffff !important;
+    }
+    
+    /* CONTENT (Abierto): Fondo Blanco y Texto Negro */
+    .streamlit-expanderContent {
+        background-color: #ffffff !important; 
+        color: #000000 !important;
+        border: 1px solid #ddd;
+        border-radius: 0 0 4px 4px;
+        padding: 10px;
+    }
+    .streamlit-expanderContent label p {
+        color: #000000 !important; 
+    }
+    
+    /* ========== 3. RADIO BUTTONS (ELIMINAR NARANJA) ========== */
+    div[role="radiogroup"] div[role="radio"] > div:first-child {
+        border-color: #00b0f0 !important;
+        background-color: transparent !important;
+    }
+    div[role="radiogroup"] div[role="radio"][aria-checked="true"] > div:first-child {
+        background-color: #00b0f0 !important;
+        border-color: #00b0f0 !important;
+    }
+    
+    /* ========== 4. BOTONES ========== */
+    div.stButton > button {
+        background-color: #002060 !important;
+        color: #ffffff !important;
+        font-weight: bold;
+        border: none;
+    }
+    div.stButton > button p { color: #ffffff !important; }
+
+    /* ========== 5. TABLAS ========== */
+    [data-testid="stDataFrameResizable"] th {
+        background-color: #00b0f0 !important;
+        color: #ffffff !important;
+    }
+    [data-testid="stDataFrameResizable"] th div { color: #ffffff !important; }
+
+    /* ========== 6. CALENDARIO ========== */
     .cal-title {
         text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
     }
@@ -187,7 +263,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v122")
+st.title("🚀 Generador Pro v123")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -284,11 +360,10 @@ else:
                     fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     
-                    # --- CAMBIO SOLICITADO: FORMATO FECHA ESPECÍFICO PARA CONFECHOR ---
-                    # Formato: "mmmm dd 'de' aaaa" (Diciembre 23 de 2025)
+                    # --- CAMBIO APLICADO: SIN ESPACIOS EXTRA ANTES DEL \n ---
                     tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
+                    fcf = f"{tfe_confechor.strip()}\n{tho.strip()}" # Strip asegura pegado
                     
-                    fcf = f"{tfe_confechor}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
                     ftag = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else fcc
                     narc = re.sub(r'[\\/*?:"<>|]', "", f"{dt.day} de {nm} de {dt.year} - {ft}, {fs} - {ftag}")[:120] + ".png"
@@ -390,9 +465,9 @@ else:
                     ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     
-                    # --- CAMBIO SOLICITADO: FORMATO FECHA ESPECÍFICO PARA CONFECHOR ---
+                    # --- CAMBIO APLICADO: SIN ESPACIOS EXTRA ANTES DEL \n ---
                     tfe_confechor = f"{nm.capitalize()} {dt.day} de {dt.year}"
-                    fcf = f"{tfe_confechor}\n{tho.strip()}"
+                    fcf = f"{tfe_confechor.strip()}\n{tho.strip()}"
                     
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
@@ -554,9 +629,9 @@ else:
                         if len(acts) > 1:
                             h += f"<div class='c-foot'>+ {len(acts)-1} más</div>"
                         elif len(acts) == 1:
-                            h += f"<div class='c-foot'>&nbsp;</div>" # Azul sin texto
+                            h += f"<div class='c-foot'>&nbsp;</div>"
                         else:
-                            h += f"<div class='c-foot-empty'></div>" # Gris vacío
+                            h += f"<div class='c-foot-empty'></div>"
                         
                         h += "</div>"
             h += "</div>"
