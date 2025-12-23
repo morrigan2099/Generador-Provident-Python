@@ -140,7 +140,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v109", layout="wide")
+st.set_page_config(page_title="Provident Pro v111", layout="wide")
 
 # JS: Bloquear teclado en móviles
 st.markdown("""
@@ -163,7 +163,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v109")
+st.title("🚀 Generador Pro v111")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -395,7 +395,7 @@ else:
                 st.success("Hecho")
 
     # --------------------------------------------------------
-    # MÓDULO CALENDARIO (ESTRUCTURA UNIFORME Y RÍGIDA)
+    # MÓDULO CALENDARIO
     # --------------------------------------------------------
     elif modulo == "📅 Calendario":
         st.subheader("📅 Calendario de Actividades")
@@ -451,7 +451,6 @@ else:
             cal = calendar.Calendar(firstweekday=0) 
             weeks = cal.monthdayscalendar(ay, am)
             
-            # CSS UNIFORME
             st.markdown("""
             <style>
             .cal-title {
@@ -480,11 +479,10 @@ else:
                 height: 160px; 
                 display: flex; 
                 flex-direction: column;
-                justify-content: space-between; /* ESTO ES CLAVE */
+                justify-content: space-between;
                 overflow: hidden;
             }
             
-            /* HEADER: DIA */
             .c-day { 
                 flex: 0 0 auto;
                 background: #00b0f0; 
@@ -495,9 +493,8 @@ else:
                 padding: 2px 0;
             }
             
-            /* BODY: IMAGEN (Expandible) */
             .c-body { 
-                flex-grow: 1; /* Ocupa todo el espacio restante */
+                flex-grow: 1; 
                 width: 100%;
                 background-position: center;
                 background-repeat: no-repeat;
@@ -505,24 +502,24 @@ else:
                 background-color: #f8f8f8;
             }
             
-            /* FOOTER: OBLIGATORIO */
+            /* FOOTER: ALTURA FIJA PARA EVITAR SALTOS */
             .c-foot { 
                 flex: 0 0 auto;
+                height: 20px; /* Altura fija obligatoria */
                 background: #002060; 
                 color: #ffffff; 
                 font-weight: 900; 
                 text-align: center; 
                 font-size: 0.9em; 
-                padding: 2px;
-                white-space: nowrap; /* Evita que el texto rompa la altura */
+                padding: 1px;
+                white-space: nowrap;
                 overflow: hidden;
             }
             
-            /* Ajustes Mobile */
             @media (max-width: 600px) {
                 .c-cell { height: 110px; }
                 .c-day { font-size: 0.9em; }
-                .c-foot { font-size: 0.7em; }
+                .c-foot { font-size: 0.7em; height: 16px; }
             }
             </style>
             """, unsafe_allow_html=True)
@@ -549,21 +546,21 @@ else:
                             style_bg = f"style=\"background-image: url('{acts[0]['thumb']}');\""
                         h += f"<div class='c-body' {style_bg}></div>"
                         
-                        # FOOTER (Siempre presente para uniformidad)
+                        # FOOTER (Siempre presente, vacío si <= 1)
                         if len(acts) > 1:
                             ftxt = f"+ {len(acts)-1} más"
-                            fcol = "#ffffff"
+                            fbg = "#002060" # Azul normal
                         elif len(acts) == 1:
-                            ftxt = "1 evento"
-                            fcol = "#ffffff"
+                            ftxt = "&nbsp;" # Vacío pero ocupa espacio
+                            fbg = "#002060" # Azul (o el color que prefieras para la barra vacía)
                         else:
-                            ftxt = "Sin actividad"
-                            fcol = "#666" # Gris para disimular
+                            ftxt = "&nbsp;"
+                            fbg = "#e0e0e0" # Gris para días sin nada
                             
-                        # Si no hay eventos, pintamos el footer gris oscuro o igual al borde
-                        bg_foot = "#002060" if acts else "#e0e0e0"
+                        # Si prefieres que el footer vacío de 1 evento NO se vea azul sino blanco/transparente
+                        # cambia fbg arriba. Pero "Footer Vacío" suele implicar que la barra existe.
                         
-                        h += f"<div class='c-foot' style='background:{bg_foot}; color:{fcol}'>{ftxt}</div>"
+                        h += f"<div class='c-foot' style='background:{fbg}'>{ftxt}</div>"
                         
                         h += "</div>"
             h += "</div>"
