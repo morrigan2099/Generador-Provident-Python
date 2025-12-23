@@ -18,7 +18,7 @@ from pdf2image import convert_from_bytes
 from PIL import Image, ImageOps, ImageFilter
 
 # ============================================================
-#  FUNCIONES TÉCNICAS (LÓGICA SAGRADA - NO TOCAR)
+#  FUNCIONES TÉCNICAS (LÓGICA DE PROCESAMIENTO)
 # ============================================================
 
 def recorte_inteligente_bordes(img):
@@ -89,17 +89,28 @@ def obtener_concat_texto(record):
     return ", ".join([str(p) for p in parts if str(p).lower() != 'none'])
 
 # ============================================================
-#  INTERFAZ Y ESTILOS
+#  INTERFAZ Y ESTILOS CSS PRO (SOLUCIÓN OVERLAY)
 # ============================================================
-st.set_page_config(page_title="Provident Pro v162", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Provident Pro v163", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
-    .block-container { padding-top: 40px !important; padding-left: 5px !important; padding-right: 5px !important; }
+    .block-container { padding-top: 20px !important; }
     
-    .cal-master { position: relative; max-width: 400px; margin: 0 auto; }
+    /* EL CONTENEDOR QUE LO CORRIGE TODO */
+    .cal-container-fixed {
+        position: relative;
+        max-width: 400px;
+        margin: 0 auto;
+    }
 
-    .cal-grid-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    /* LA TABLA VISUAL (FONDO) */
+    .cal-grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        z-index: 1;
+    }
     .cal-grid-table th { background: #002060; color: white; font-size: 10px; padding: 5px 0; border: 0.1px solid white; }
     .cal-grid-table td { border: 0.5px solid #ccc; height: 110px; vertical-align: top; padding: 0 !important; background: white; }
 
@@ -107,27 +118,39 @@ st.markdown("""
     .cell-img { height: 80px; background-size: cover; background-position: center; }
     .cell-foot { height: 14px; background: #002060; color: white; text-align: center; font-size: 8px; line-height: 14px; }
 
-    /* CAPA DE BOTONES TOTALMENTE ENCIMADA */
-    .st-button-overlay {
+    /* LA CAPA DE BOTONES (FRENTE) */
+    /* Usamos position: absolute para que no ocupe espacio físico abajo */
+    .cal-button-layer {
         position: absolute;
-        top: 26px; /* Altura de los headers L-M-X... */
+        top: 26px; /* Bajamos los botones para que empiecen después del L-M-X... */
         left: 0;
         width: 100%;
-        z-index: 100;
+        z-index: 999;
+        pointer-events: none; /* Permite que el contenedor ignore clicks pero sus hijos no */
     }
-    .st-button-overlay [data-testid="column"] { padding: 0 !important; }
-    .st-button-overlay button {
+    
+    .cal-button-layer [data-testid="column"] { padding: 0 !important; }
+
+    /* Estilo de los botones invisibles de Streamlit */
+    .cal-button-layer button {
         width: 100% !important;
         height: 110px !important;
         background: transparent !important;
         border: none !important;
         color: transparent !important;
         margin: 0 !important;
+        padding: 0 !important;
+        pointer-events: auto; /* El botón sí recibe el click */
+        box-shadow: none !important;
     }
+    .cal-button-layer button:hover {
+        background: rgba(0, 176, 240, 0.1) !important; /* Ligero efecto hover para feedback */
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
-# LÓGICA DE NAVEGACIÓN
+# --- VARIABLES DE ESTADO ---
 MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 DIAS_ES = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
 
@@ -138,19 +161,19 @@ if 'idx_postal' not in st.session_state: st.session_state.idx_postal = 0
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-# --- SIDEBAR COMPLETO ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.image("https://www.provident.com.mx/content/dam/provident-mexico/logos/logo-provident.png", width=120)
-    st.header("⚙️ Conexión")
+    st.header("⚙️ Configuración")
     r_bases = requests.get("https://api.airtable.com/v0/meta/bases", headers=headers)
     if r_bases.status_code == 200:
         base_opts = {b['name']: b['id'] for b in r_bases.json()['bases']}
-        base_sel = st.selectbox("Base:", list(base_opts.keys()))
+        base_sel = st.selectbox("Base Airtable:", list(base_opts.keys()))
         if base_sel:
             r_tab = requests.get(f"https://api.airtable.com/v0/meta/bases/{base_opts[base_sel]}/tables", headers=headers)
             if r_tab.status_code == 200:
                 tab_opts = {t['name']: t['id'] for t in r_tab.json()['tables']}
-                tabla_sel = st.selectbox("Mes:", list(tab_opts.keys()))
+                tabla_sel = st.selectbox("Mes (Tabla):", list(tab_opts.keys()))
                 if st.session_state.get('tabla_actual') != tabla_sel:
                     r_reg = requests.get(f"https://api.airtable.com/v0/{base_opts[base_sel]}/{tab_opts[tabla_sel]}", headers=headers)
                     recs = r_reg.json().get("records", [])
@@ -160,17 +183,18 @@ with st.sidebar:
                     st.rerun()
     st.divider()
     if 'raw_records' in st.session_state:
-        if st.button("📆 Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.session_state.dia_seleccionado = None; st.rerun()
-        if st.button("📮 Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
-        if st.button("📄 Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
+        if st.button("📆 Ver Calendario", use_container_width=True): st.session_state.active_module = "Calendario"; st.session_state.dia_seleccionado = None; st.rerun()
+        if st.button("📮 Hacer Postales", use_container_width=True): st.session_state.active_module = "Postales"; st.rerun()
+        if st.button("📄 Hacer Reportes", use_container_width=True): st.session_state.active_module = "Reportes"; st.rerun()
 
-# --- MAIN ENGINE ---
+# --- MOTOR PRINCIPAL ---
 if 'raw_records' not in st.session_state:
-    st.info("👈 Conecta una base en el menú lateral.")
+    st.info("👋 Hola! Por favor conecta tu base de Airtable en el menú de la izquierda.")
 else:
     mod = st.session_state.active_module
 
     if mod == "Calendario":
+        # Agrupar por fecha
         fechas_oc = {}
         for r in st.session_state.raw_data_original:
             f = r['fields'].get('Fecha')
@@ -181,6 +205,7 @@ else:
                 fechas_oc[fk].append({"thumb": th, "raw": r['fields']})
 
         if st.session_state.dia_seleccionado:
+            # --- VISTA DETALLE DEL DÍA ---
             k = st.session_state.dia_seleccionado
             evs = sorted(fechas_oc[k], key=lambda x: x['raw'].get('Hora',''))
             curr = st.session_state.idx_postal % len(evs)
@@ -188,26 +213,27 @@ else:
             dt = datetime.strptime(k, '%Y-%m-%d')
             mes_n, dia_n = MESES_ES[dt.month-1].upper(), f"{DIAS_ES[dt.weekday()].capitalize()} {dt.day}"
 
-            c1, c2, c3 = st.columns([1, 4, 1])
-            with c1:
-                if len(evs) > 1 and st.button("⬅️", key="p_nav"): st.session_state.idx_postal -= 1; st.rerun()
-            with c2:
-                st.markdown(f"<div style='text-align:center'><b>{mes_n}</b><br>{dia_n}</div>", unsafe_allow_html=True)
-            with c3:
-                if len(evs) > 1 and st.button("➡️", key="n_nav"): st.session_state.idx_postal += 1; st.rerun()
-
-            if st.button("🔙 VOLVER"): st.session_state.dia_seleccionado = None; st.rerun()
+            if st.button("⬅️ VOLVER AL CALENDARIO"): st.session_state.dia_seleccionado = None; st.rerun()
+            
+            st.markdown(f"### {dia_n} de {mes_n.capitalize()}")
             if evt['thumb']: st.image(evt['thumb'], use_container_width=True)
+            
             f_d = evt['raw']
-            st.markdown(f"**🏢 {f_d.get('Sucursal')}**\n\n**📌 {f_d.get('Tipo')}** | **⏰ {obtener_hora_texto(f_d.get('Hora'))}**\n\n**📍 {obtener_concat_texto(f_d)}**")
+            st.info(f"🏢 **Sucursal:** {f_d.get('Sucursal')}\n\n📌 **Actividad:** {f_d.get('Tipo')}\n\n⏰ **Hora:** {obtener_hora_texto(f_d.get('Hora'))}\n\n📍 **Lugar:** {obtener_concat_texto(f_d)}")
+
         else:
+            # --- VISTA MES CON OVERLAY CORREGIDO ---
             if fechas_oc:
                 dt_ref = datetime.strptime(list(fechas_oc.keys())[0], '%Y-%m-%d')
                 weeks = calendar.Calendar(0).monthdayscalendar(dt_ref.year, dt_ref.month)
-                st.markdown(f"<div class='cal-master'>", unsafe_allow_html=True)
-                st.markdown(f"<div style='background:linear-gradient(135deg,#002060,#00b0f0);padding:10px;border-radius:8px;text-align:center;color:white;font-weight:bold;text-transform:uppercase;margin-bottom:10px;'>{MESES_ES[dt_ref.month-1]} {dt_ref.year}</div>", unsafe_allow_html=True)
                 
-                # TABLA
+                # Encabezado del Mes
+                st.markdown(f"<div style='background:#002060; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin:0 auto 10px auto; max-width:400px;'>{MESES_ES[dt_ref.month-1].upper()} {dt_ref.year}</div>", unsafe_allow_html=True)
+
+                # INICIO DEL CONTENEDOR RELATIVO
+                st.markdown('<div class="cal-container-fixed">', unsafe_allow_html=True)
+                
+                # 1. DIBUJAMOS LA TABLA (CAPA FONDO)
                 table_html = '<table class="cal-grid-table"><tr><th>L</th><th>M</th><th>X</th><th>J</th><th>V</th><th>S</th><th>D</th></tr>'
                 for week in weeks:
                     table_html += '<tr>'
@@ -221,24 +247,27 @@ else:
                     table_html += '</tr>'
                 st.markdown(table_html + '</table>', unsafe_allow_html=True)
 
-                # CAPA BOTONES
-                st.markdown('<div class="st-button-overlay">', unsafe_allow_html=True)
+                # 2. DIBUJAMOS LOS BOTONES (CAPA FRENTE - ABSOLUTA)
+                st.markdown('<div class="cal-button-layer">', unsafe_allow_html=True)
                 for week in weeks:
                     cols = st.columns(7)
                     for i, day in enumerate(week):
                         if day > 0:
                             fk = f"{dt_ref.year}-{str(dt_ref.month).zfill(2)}-{str(day).zfill(2)}"
                             with cols[i]:
-                                if fk in fechas_oc and st.button(" ", key=f"day_{fk}"):
-                                    st.session_state.dia_seleccionado = fk; st.rerun()
+                                # El botón existe físicamente aquí pero CSS lo encima en la rejilla
+                                if st.button(" ", key=f"btn_{fk}"):
+                                    st.session_state.dia_seleccionado = fk
+                                    st.rerun()
                 st.markdown('</div></div>', unsafe_allow_html=True)
 
     elif mod in ["Postales", "Reportes"]:
-        st.subheader(f"Generador de {mod}")
+        # (Se mantiene la lógica funcional de las versiones anteriores)
+        st.subheader(f"Módulo de {mod}")
         df = pd.DataFrame([r['fields'] for r in st.session_state.raw_records])
         for c in df.columns:
             if isinstance(df[c].iloc[0], list): df.drop(c, axis=1, inplace=True)
-        sel_all = st.checkbox("Seleccionar Todo")
+        sel_all = st.checkbox("Seleccionar Todos")
         df.insert(0, "✅", sel_all)
         df_edit = st.data_editor(df, hide_index=True)
         idx_list = df_edit.index[df_edit["✅"]==True].tolist()
@@ -248,9 +277,9 @@ else:
             archs = [f for f in os.listdir(f_tpl) if f.endswith('.pptx')]
             tipos = df.loc[idx_list, "Tipo"].unique()
             if 'config' not in st.session_state: st.session_state.config = {"plantillas": {}}
-            for t in tipos: st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla {t}:", archs, key=f"p_{t}")
+            for t in tipos: st.session_state.config["plantillas"][t] = st.selectbox(f"Plantilla para {t}:", archs, key=f"p_{t}")
 
-            if st.button("🚀 GENERAR PACK"):
+            if st.button("🚀 INICIAR PROCESAMIENTO"):
                 p_bar = st.progress(0); zip_data = []
                 for i, ix in enumerate(idx_list):
                     rec, orig = st.session_state.raw_records[ix]['fields'], st.session_state.raw_data_original[ix]['fields']
@@ -292,4 +321,4 @@ else:
                     z_buf = BytesIO()
                     with zipfile.ZipFile(z_buf, "w") as z:
                         for f in zip_data: z.writestr(f["n"], f["d"])
-                    st.download_button("⬇️ DESCARGAR ZIP", z_buf.getvalue(), f"Pack_{mod}.zip", "application/zip")
+                    st.download_button("⬇️ DESCARGAR RESULTADOS (ZIP)", z_buf.getvalue(), f"Pack_Provident.zip", "application/zip")
