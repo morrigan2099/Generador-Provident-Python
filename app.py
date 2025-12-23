@@ -126,7 +126,7 @@ def obtener_hora_texto(hora_str):
 
 def obtener_concat_texto(record):
     parts = []
-    # CORRECCIÓN: Asignar variables correctamente antes de verificar
+    # Definir variables primero
     val_punto = record.get('Punto de reunion')
     val_ruta = record.get('Ruta a seguir')
     val_mun = record.get('Municipio')
@@ -142,7 +142,7 @@ def obtener_concat_texto(record):
 #  INICIO DE LA APP
 # ============================================================
 
-st.set_page_config(page_title="Provident Pro v119", layout="wide")
+st.set_page_config(page_title="Provident Pro v120", layout="wide")
 
 # 1. BLOQUEO TECLADO (JS)
 st.markdown("""
@@ -160,7 +160,7 @@ st.markdown("""
 </script>
 """, unsafe_allow_html=True)
 
-# 2. ESTILOS CSS - SOLO CALENDARIO
+# 2. ESTILOS CSS - SOLO CALENDARIO (Todo lo demás nativo)
 st.markdown("""
 <style>
     .cal-title {
@@ -187,7 +187,7 @@ if 'config' not in st.session_state:
         with open("config_app.json", "r") as f: st.session_state.config = json.load(f)
     else: st.session_state.config = {"plantillas": {}}
 
-st.title("🚀 Generador Pro v119")
+st.title("🚀 Generador Pro v120")
 TOKEN = "patyclv7hDjtGHB0F.19829008c5dee053cba18720d38c62ed86fa76ff0c87ad1f2d71bfe853ce9783"
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -280,7 +280,8 @@ else:
                     try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
                     except: dt = datetime.now(); nm = "error"
                     
-                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
+                    ft = rec.get('Tipo', 'Sin Tipo') # FIXED: Variable ft
+                    fs = rec.get('Sucursal', '000')
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcf = f"{tfe.strip()}\n{tho.strip()}"
                     fcc = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
@@ -323,10 +324,15 @@ else:
                     pp_io = BytesIO(); prs.save(pp_io)
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
-                        imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg')
-                        with BytesIO() as b: imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True); fbytes = b.getvalue()
+                        imgs = convert_from_bytes(dout, dpi=170, fmt='jpeg') # DPI balanceado
+                        with BytesIO() as b: 
+                            # OPTIMIZACION DE IMAGEN < 1MB
+                            imgs[0].save(b, format="JPEG", quality=85, optimize=True, progressive=True)
+                            fbytes = b.getvalue()
+                        
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Postales/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs, "Tipo":f_tipo})
+                        # FIXED: Usar variable ft
+                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":fbytes, "Sucursal":fs, "Tipo":ft})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
 
@@ -369,7 +375,7 @@ else:
                     try: dt = datetime.strptime(rec.get('Fecha','2025-01-01'), '%Y-%m-%d'); nm = MESES_ES[dt.month - 1]
                     except: dt = datetime.now(); nm = "error"
                     
-                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000')
+                    ft = rec.get('Tipo', 'Sin Tipo'); fs = rec.get('Sucursal', '000') # FIXED: Variable ft
                     tfe = obtener_fecha_texto(dt); tho = obtener_hora_texto(rec.get('Hora',''))
                     fcs = f"Sucursal {fs}" if ft == "Actividad en Sucursal" else ""
                     ftag = fcs if ft == "Actividad en Sucursal" else obtener_concat_texto(rec)
@@ -414,7 +420,8 @@ else:
                     dout = generar_pdf(pp_io.getvalue())
                     if dout:
                         path = f"{dt.year}/{str(dt.month).zfill(2)} - {nm}/Reportes/{fs}/{narc}"
-                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs, "Tipo":f_tipo})
+                        # FIXED: Usar variable ft
+                        st.session_state.archivos_en_memoria.append({"Seleccionar":True, "Archivo":narc, "RutaZip":path, "Datos":dout, "Sucursal":fs, "Tipo":ft})
                     p_bar.progress((i+1)/len(sel_idx))
                 st.success("Hecho")
 
@@ -460,6 +467,7 @@ else:
                 if 'Postal' in r['fields']:
                     att = r['fields']['Postal']
                     if isinstance(att, list) and len(att)>0: 
+                        # URL ORIGINAL
                         th = att[0].get('url') 
                 fechas_oc[f_short].append({"id":r['id'], "thumb":th})
                 fechas_lista.append(f_short)
@@ -479,7 +487,7 @@ else:
             .cal-title {
                 text-align: center; font-size: 1.5em; font-weight: bold; margin: 0 !important; padding-bottom: 10px; color: #333 !important; background-color: #fff;
             }
-            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top:0px !important; }
+            .c-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 0px !important; }
             .c-head { background: #002060 !important; color: white !important; padding: 4px; text-align: center; font-weight: bold; border-radius: 2px; font-size: 14px; }
             .c-cell { background: white !important; border: 1px solid #ccc !important; border-radius: 2px; height: 160px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
             .c-day { flex: 0 0 auto; background: #00b0f0 !important; color: white !important; font-weight: 900; font-size: 1.1em; text-align: center; padding: 2px 0; }
